@@ -2,8 +2,8 @@ services:
   webapp:
     image: leneo/webodm_webapp:swisstopo
     build:
-      context: .
-      dockerfile: custom/swisstopo/Dockerfile
+      context: ./custom/swisstopo
+      dockerfile: Dockerfile
 
   worker:
     image: leneo/webodm_webapp:swisstopo
