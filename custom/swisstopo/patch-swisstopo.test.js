@@ -8,7 +8,20 @@ const {
 } = require('./patch-swisstopo');
 
 const fixture = [
-  'providers:[{id:"bing",useBing:!0}],custom_placeholder:',
+  'map_providers:[{id:"osm",label:"OpenStreetMap",maxZoom:19},',
+  '{id:"bing",useBing:!0}],custom_placeholder:',
+  'providers:w.default.map_providers,selected:"osm",',
+  'custom_desc:w.default.custom_description,',
+  'setProvider:function(){for(var e=this.state.selected,n=this.state.custom,',
+  'i=this._container.querySelectorAll("li"),o=0;o<i.length;++o){',
+  'var r=i[o].dataset.id;t.DomUtil.setClass(i[o],this.getProviderItemClass(r)),',
+  'this.setProviderRadioButton(i[o],r)}if("custom"===e&&n)return void ',
+  't.tileLayer(n,{attribution:"",maxZoom:23,maxNativeZoom:19}).addTo(this._map);',
+  'var a=this.options.providers.find(function(t){return t.id===e});',
+  'a&&(a.useBing?t.tileLayer.bing(a.url,{attribution:a.attribute,maxZoom:23,',
+  'maxNativeZoom:a.maxZoom}).addTo(this._map):t.tileLayer(a.url,',
+  '{attribution:a.attribute,maxZoom:23,maxNativeZoom:a.maxZoom})',
+  '.addTo(this._map))}',
   'mapOptions:{maxZoom:23,maxNativeZoom:20},',
   'c.innerHTML="Apply",t.DomEvent.on(c,"click",function(t){',
   'n.onCustomProviderClick(t,l.value)})},setProviderRadioButton:function(t,e){',
@@ -31,7 +44,12 @@ const fixture = [
 const first = patchBundleContent(fixture);
 
 assert.strictEqual(first.changed, true);
-assert(first.bundle.includes('label:"SWISSIMAGE (swisstopo)"'));
+assert(first.bundle.includes('window.parent.__webodmGcpiConfig'));
+assert(first.bundle.includes('id:"webodm-basemap-"+e'));
+assert(first.bundle.includes('type:t.type||"tms"'));
+assert(first.bundle.includes('"wms"===a.type'));
+assert(first.bundle.includes('t.tileLayer.wms(a.url,s)'));
+assert(first.bundle.includes('return t.default'));
 assert(first.bundle.includes('maxZoom:28,maxNativeZoom:20'));
 assert(first.bundle.includes('window.__webodmGcpProj4=C.default'));
 assert(first.bundle.includes(`C.default.defs("EPSG:2056","${epsg2056Definition}")`));

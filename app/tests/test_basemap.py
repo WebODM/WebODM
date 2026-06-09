@@ -13,8 +13,11 @@ class TestBasemap(BootTestCase):
         pass
 
     def test_basemap(self):
-        # There should be 3 basemaps by default
-        self.assertEqual(Basemap.objects.all().count(), 3)
+        # There should be 4 basemaps by default
+        self.assertEqual(Basemap.objects.all().count(), 4)
+        self.assertTrue(
+            Basemap.objects.filter(label='SWISSIMAGE (swisstopo)').exists()
+        )
 
         Basemap.objects.all().delete()
         Basemap.invalidate_cache()
@@ -96,4 +99,3 @@ class TestBasemap(BootTestCase):
         client.login(username='testsuperuser', password='test1234')
         response = client.get('/admin/app/basemap/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-

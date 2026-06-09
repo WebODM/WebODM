@@ -1,8 +1,12 @@
 # Swiss additions for the GCP Interface
 
-This overlay adds the swisstopo SWISSIMAGE WMTS provider to the WebODM GCP
-Interface. Native tiles are requested through zoom level 20 and Leaflet
-overzooms the imagery through level 28.
+This overlay connects the GCP Interface to the basemaps managed by WebODM at
+`/admin/app/basemap/`. TMS and WMS entries, the configured default basemap,
+zoom levels, attribution, subdomains and WMS options are passed to the GCP map.
+Leaflet overzooms imagery through level 28.
+
+SWISSIMAGE is installed as a normal WebODM basemap by migration, so it can be
+edited, disabled by deletion, or selected as the default from the admin.
 
 It also registers the Swiss LV95 coordinate reference system with the bundled
 Proj4 library. Existing GCP files can use `EPSG:2056` on their first line:
@@ -12,7 +16,8 @@ EPSG:2056
 2600000 1200000 500 1024 768 image.jpg
 ```
 
-The map provider panel includes a checkbox to compare an existing GCP altitude
+The existing `posm-gcpi` plugin, managed at `/admin/app/plugin/`, includes a
+checkbox to compare an existing GCP altitude
 with the official swisstopo terrain height whenever its marker is selected.
 The comparison is enabled by default. If the returned height differs by more
 than 0.1 metre, the user can confirm replacing the GCP altitude.

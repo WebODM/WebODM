@@ -1,5 +1,13 @@
 {% extends "app/plugins/templates/base.html" %}
 
 {% block content %}
-    <iframe src="node_modules/webodm-posm-gcpi/index.html" style="border: none; display: block; min-height: 420px; width: 100%;" class="full-height"></iframe>
+    <script>
+        window.__webodmGcpiConfig = JSON.parse('{{ gcpi_config|escapejs }}');
+    </script>
+    <iframe
+        src="node_modules/webodm-posm-gcpi/index.html"
+        title="Ground Control Point Interface"
+        style="border: none; display: block; min-height: 420px; width: 100%;"
+        class="full-height"
+    ></iframe>
 {% endblock %}

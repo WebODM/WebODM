@@ -1,14 +1,38 @@
 const fs = require('fs');
 const path = require('path');
 
-const provider = [
-  '{id:"swisstopo",',
-  'label:"SWISSIMAGE (swisstopo)",',
-  'url:"https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg",',
-  'attribution:"&copy; swisstopo",',
-  'maxZoom:20}'
+const mapProvidersPattern =
+  /map_providers:\[(.*?)\],custom_placeholder:/;
+const webodmBasemapMarker = 'window.parent.__webodmGcpiConfig';
+const providerSelectionPattern =
+  /providers:([A-Za-z_$][\w$]*)\.default\.map_providers,selected:"osm",custom_desc:\1\.default\.custom_description/;
+const originalSetProvider = [
+  'setProvider:function(){for(var e=this.state.selected,n=this.state.custom,',
+  'i=this._container.querySelectorAll("li"),o=0;o<i.length;++o){',
+  'var r=i[o].dataset.id;t.DomUtil.setClass(i[o],this.getProviderItemClass(r)),',
+  'this.setProviderRadioButton(i[o],r)}if("custom"===e&&n)return void ',
+  't.tileLayer(n,{attribution:"",maxZoom:23,maxNativeZoom:19}).addTo(this._map);',
+  'var a=this.options.providers.find(function(t){return t.id===e});',
+  'a&&(a.useBing?t.tileLayer.bing(a.url,{attribution:a.attribute,maxZoom:23,',
+  'maxNativeZoom:a.maxZoom}).addTo(this._map):t.tileLayer(a.url,',
+  '{attribution:a.attribute,maxZoom:23,maxNativeZoom:a.maxZoom})',
+  '.addTo(this._map))}'
 ].join('');
-const existingProvider = /{id:"swisstopo",label:"SWISSIMAGE \(swisstopo\)",url:"https:\/\/wmts\.geo\.admin\.ch\/1\.0\.0\/ch\.swisstopo\.swissimage\/default\/current\/3857\/{z}\/{x}\/{y}\.jpeg",attribution:"&copy; swisstopo",maxZoom:\d+}/;
+const webodmSetProvider = [
+  'setProvider:function(){for(var e=this.state.selected,n=this.state.custom,',
+  'i=this._container.querySelectorAll("li"),o=0;o<i.length;++o){',
+  'var r=i[o].dataset.id;t.DomUtil.setClass(i[o],this.getProviderItemClass(r)),',
+  'this.setProviderRadioButton(i[o],r)}if("custom"===e&&n)return void ',
+  't.tileLayer(n,{attribution:"",maxZoom:23,maxNativeZoom:19}).addTo(this._map);',
+  'var a=this.options.providers.find(function(t){return t.id===e});if(a){',
+  'var s={attribution:a.attribution||a.attribute||a.label,maxZoom:23,',
+  'maxNativeZoom:a.maxZoom||20,minZoom:a.minZoom||0,',
+  'subdomains:a.subdomains||[]},u;',
+  'if("wms"===a.type)s.layers=a.layers||"0",s.styles=a.styles||"default",',
+  's.format=a.format||"image/png",s.transparent="image/jpeg"!==s.format,',
+  'u=t.tileLayer.wms(a.url,s);else if(a.useBing)u=t.tileLayer.bing(a.url,s);',
+  'else u=t.tileLayer(a.url,s);u.addTo(this._map)}}'
+].join('');
 const epsg2056Definition = [
   '+proj=somerc',
   '+lat_0=46.95240555555556',
@@ -175,21 +199,48 @@ function patchBundleContent(input) {
   let bundle = input;
   let changed = false;
 
-  if (existingProvider.test(bundle)) {
-    const updatedBundle = bundle.replace(existingProvider, provider);
-    changed = changed || updatedBundle !== bundle;
-    bundle = updatedBundle;
-  } else {
-    const marker = 'useBing:!0}],custom_placeholder:';
+  if (!bundle.includes(webodmBasemapMarker)) {
+    const match = bundle.match(mapProvidersPattern);
 
-    if (!bundle.includes(marker)) {
+    if (!match) {
       throw new Error('Could not locate the map provider configuration in the GCPI bundle');
     }
 
     bundle = bundle.replace(
-      marker,
-      `useBing:!0},${provider}],custom_placeholder:`
+      mapProvidersPattern,
+      (providerConfig, fallbackProviders) => [
+        'map_providers:function(){',
+        `var t=${webodmBasemapMarker},`,
+        'e=t&&Array.isArray(t.basemaps)?t.basemaps:[];',
+        'return e.length?e.map(function(t,e){return{',
+        'id:"webodm-basemap-"+e,label:t.label,url:t.url,',
+        'attribution:t.attribution||t.label,maxZoom:t.maxzoom||20,',
+        'minZoom:t.minzoom||0,subdomains:t.subdomains||[],',
+        'type:t.type||"tms",layers:t.layers,styles:t.styles,format:t.format,',
+        'default:!!t.default}}):[',
+        fallbackProviders,
+        '] }(),custom_placeholder:'
+      ].join('')
     );
+
+    if (!providerSelectionPattern.test(bundle)) {
+      throw new Error('Could not locate the default GCPI map provider selection');
+    }
+
+    bundle = bundle.replace(
+      providerSelectionPattern,
+      (selection, configModule) =>
+        `providers:${configModule}.default.map_providers,` +
+        `selected:(${configModule}.default.map_providers.find(function(t){` +
+        `return t.default})||${configModule}.default.map_providers[0]||{}).id,` +
+        `custom_desc:${configModule}.default.custom_description`
+    );
+
+    if (!bundle.includes(originalSetProvider)) {
+      throw new Error('Could not locate the GCPI map provider layer setup');
+    }
+
+    bundle = bundle.replace(originalSetProvider, webodmSetProvider);
     changed = true;
   }
 
@@ -296,7 +347,7 @@ function patchInstalledBundle() {
   if (result.changed) {
     fs.writeFileSync(bundlePath, result.bundle);
     console.log(
-      `Added SWISSIMAGE, EPSG:2056 and swisstopo elevation support to ${bundleName}`
+      `Added WebODM basemaps, EPSG:2056 and swisstopo elevation support to ${bundleName}`
     );
   }
 }

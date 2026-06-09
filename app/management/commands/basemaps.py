@@ -31,6 +31,14 @@ DEFAULT_BASEMAPS = [
         'maxzoom': 19,
         'minzoom': 0,
     },
+    {
+        'type': 'tms',
+        'url': 'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg',
+        'attribution': '&copy; swisstopo',
+        'label': 'SWISSIMAGE (swisstopo)',
+        'maxzoom': 20,
+        'minzoom': 0,
+    },
 ]
 
 
