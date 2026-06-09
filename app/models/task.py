@@ -982,10 +982,10 @@ class Task(models.Model):
                     zip_h.extractall(assets_dir)
             except zlib.error as e:
                 raise zipfile.BadZipFile(str(e))
-
-            logger.info("Extracted all.zip for {}".format(self))
+            finally:
+                os.remove(zip_path)
             
-            os.remove(zip_path)
+            logger.info("Extracted all.zip for {}".format(self))
 
             # Check if this looks like a backup file, in which case we need to move the files
             # a directory level higher
