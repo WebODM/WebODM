@@ -12,11 +12,15 @@ EPSG:2056
 2600000 1200000 500 1024 768 image.jpg
 ```
 
-When an existing GCP marker is selected on the map, the interface requests its
-terrain height from the official swisstopo height service. Coordinates are
-sent in `EPSG:2056` and the `COMB` elevation model is used. If the returned
-height differs from the GCP altitude by more than 0.1 metre, the user can
-confirm replacing the GCP altitude with the swisstopo value.
+The map provider panel includes a checkbox to compare an existing GCP altitude
+with the official swisstopo terrain height whenever its marker is selected.
+The comparison is enabled by default. If the returned height differs by more
+than 0.1 metre, the user can confirm replacing the GCP altitude.
+
+The same panel also includes a button to check all loaded map GCPs. It displays
+one summary of the differences and can replace all differing altitudes after a
+single confirmation. Coordinates are sent in `EPSG:2056` and the `COMB`
+elevation model is used.
 
 Build and start WebODM with:
 
