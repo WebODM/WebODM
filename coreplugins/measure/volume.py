@@ -104,8 +104,11 @@ def calc_volume(input_dem, pts=None, pts_epsg=None, geojson_polygon=None, decima
 
             # Calculate volume
             diff = rast_dem - base
-            volume = np.nansum(diff) * px_area
-            volume *= to_meter ** 3
+            factor = px_area * (to_meter ** 3)
+
+            fill = np.nansum(diff[diff > 0]) * factor  # Material above the base surface
+            cut = -np.nansum(diff[diff < 0]) * factor  # Material below the base surface
+            net = fill - cut
 
             # import matplotlib.pyplot as plt
             # fig, ax = plt.subplots()
@@ -115,7 +118,11 @@ def calc_volume(input_dem, pts=None, pts_epsg=None, geojson_polygon=None, decima
             # plt.title('Debug')
             # plt.show()
 
-            return {'output': np.abs(np.round(volume, decimals=decimals))}
+            return {'output': {
+                'cut': float(np.round(cut, decimals=decimals)),
+                'fill': float(np.round(fill, decimals=decimals)),
+                'net': float(np.round(net, decimals=decimals))
+            }}
     except Exception as e:
         return {'error': str(e)}
 

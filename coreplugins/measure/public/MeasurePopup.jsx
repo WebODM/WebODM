@@ -32,6 +32,7 @@ export default class MeasurePopup extends React.Component {
         volume: null, // to be calculated,
         baseMethod: localStorage.getItem("measure_base_method") || "triangulate",
         task: null,
+        demType: "dsm",
         error: ""
     };
 
@@ -58,8 +59,11 @@ export default class MeasurePopup extends React.Component {
     };
     
     if (this.state.volume !== null && this.state.volume !== false){
-        result.Volume = us.volume(this.state.volume).value;
+        result.Cut = us.volume(this.state.volume.cut).value;
+        result.Fill = us.volume(this.state.volume.fill).value;
+        result.Net = us.volume(this.state.volume.net).value;
         result.BaseSurface = this.state.baseMethod;
+        result.Model = this.state.demType;
     }
 
     result.UnitSystem = this.lastUnitSystem;
@@ -102,7 +106,8 @@ export default class MeasurePopup extends React.Component {
         const layer = layers[layers.length - 1];
         const meta = layer[Symbol.for("meta")];
         if (meta){
-            this.setState({task: meta.task});
+            const demType = meta.type === "dtm" ? "dtm" : "dsm";
+            this.setState({task: meta.task, demType});
             setTimeout(() => {
               this.recalculateVolume();
             }, 0);
@@ -116,7 +121,7 @@ export default class MeasurePopup extends React.Component {
   }
 
   recalculateVolume = () => {
-    const { task, baseMethod } = this.state;
+    const { task, baseMethod, demType } = this.state;
     if (!task) return;
 
     this.setState({volume: null, error: ""});
@@ -126,7 +131,8 @@ export default class MeasurePopup extends React.Component {
         url: `/api/plugins/measure/task/${task.id}/volume`,
         data: JSON.stringify({
           area: this.props.resultFeature.toGeoJSON(14),
-          method: baseMethod
+          method: baseMethod,
+          dem_type: demType
         }),
         contentType: "application/json"
     }).done(result => {
@@ -136,7 +142,7 @@ export default class MeasurePopup extends React.Component {
               else{
                   Workers.getOutput(result.celery_task_id, (error, volume) => {
                       if (error) this.setState({error});
-                      else this.setState({volume: parseFloat(volume)});
+                      else this.setState({volume});
                   }, `/api/plugins/measure/task/${task.id}/volume/get/`);
               }
             });
@@ -185,13 +191,16 @@ export default class MeasurePopup extends React.Component {
         {featureType == "Polygon" && <p>{_("Perimeter:")} {this.props.model.lengthDisplay}</p>}
         {featureType == "Polygon" && <p>{_("Area:")} {this.props.model.areaDisplay}</p>}
         {featureType == "Polygon" && volume === null && !error && <p>{_("Volume:")} <i>{_("computing…")}</i> <i className="fa fa-cog fa-spin fa-fw" /></p>}
-        {typeof volume === "number" ? 
+        {volume && typeof volume === "object" ?
             [
-              <p>{_("Volume:")} {us.volume(volume).toString()}</p>,
-              <p className="base-control">{_("Base surface:")} 
+              <p key="model">{_("Model:")} {this.state.demType === "dtm" ? _("Terrain (DTM)") : _("Surface (DSM)")}</p>,
+              <p key="cut">{_("Cut:")} {us.volume(volume.cut).toString()}</p>,
+              <p key="fill">{_("Fill:")} {us.volume(volume.fill).toString()}</p>,
+              <p key="net">{_("Net:")} {us.volume(volume.net).toString()}</p>,
+              <p key="base-control" className="base-control">{_("Base surface:")}
                 <select className="form-control" value={this.state.baseMethod} onChange={this.handleBaseMethodChange}>
-                  {baseMethods.map(bm => 
-                      <option key={bm.method} 
+                  {baseMethods.map(bm =>
+                      <option key={bm.method}
                               value={bm.method}>{bm.label}</option>)}
                 </select>
               </p>
