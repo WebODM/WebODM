@@ -1,0 +1,85 @@
+name: Sync upstream master
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  issues: write
+
+env:
+  UPSTREAM_REPO: WebODM/WebODM
+  UPSTREAM_BRANCH: master
+  LOCAL_BRANCH: master
+  CONFLICT_ISSUE_TITLE: "Upstream sync conflict: manual merge needed"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.LOCAL_BRANCH }}
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch upstream "${UPSTREAM_BRANCH}"
+
+      - name: Attempt merge
+        id: merge
+        run: |
+          if git merge --no-edit "upstream/${UPSTREAM_BRANCH}"; then
+            echo "conflict=false" >> "$GITHUB_OUTPUT"
+          else
+            git merge --abort
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push merged master
+        if: steps.merge.outputs.conflict == 'false'
+        run: git push origin "${LOCAL_BRANCH}"
+
+      - name: Close stale conflict issue
+        if: steps.merge.outputs.conflict == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for n in $(gh issue list --search "\"${CONFLICT_ISSUE_TITLE}\" in:title" --state open --json number -q '.[].number'); do
+            gh issue close "$n" --comment "Resolved automatically: upstream merged into ${LOCAL_BRANCH} cleanly in a later sync run."
+          done
+
+      - name: Open or update conflict issue
+        if: steps.merge.outputs.conflict == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing=$(gh issue list --search "\"${CONFLICT_ISSUE_TITLE}\" in:title" --state open --json number -q '.[0].number')
+          body=$(cat <<EOF
+          Automatic sync from \`${UPSTREAM_REPO}@${UPSTREAM_BRANCH}\` hit a merge conflict as of $(date -u +%Y-%m-%dT%H:%M:%SZ) and could not be merged automatically.
+
+          Please resolve manually:
+
+          \`\`\`
+          git fetch upstream ${UPSTREAM_BRANCH}
+          git merge upstream/${UPSTREAM_BRANCH}
+          # resolve conflicts, then:
+          git push origin ${LOCAL_BRANCH}
+          \`\`\`
+
+          This issue will close automatically once a scheduled sync merges cleanly.
+          EOF
+          )
+          if [ -z "$existing" ]; then
+            gh issue create --title "${CONFLICT_ISSUE_TITLE}" --body "$body" --assignee "${{ github.repository_owner }}"
+          else
+            gh issue comment "$existing" --body "$body"
+          fi
