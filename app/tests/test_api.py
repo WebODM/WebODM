@@ -9,6 +9,7 @@ from rest_framework.test import APIClient
 from rest_framework_jwt.settings import api_settings
 
 from app import pending_actions
+from app.api.pagination import PageNumberPaginationWithPageSize
 from app.models import Project, Task
 from app.plugins.signals import processing_node_removed
 from app.tests.utils import catch_signal
@@ -24,6 +25,21 @@ class TestApi(BootTestCase):
 
     def tearDown(self):
         pass
+
+    def test_project_pagination_exposes_configured_page_size(self):
+        client = APIClient()
+        client.login(username="testuser", password="test1234")
+
+        original_page_size = PageNumberPaginationWithPageSize.page_size
+        PageNumberPaginationWithPageSize.page_size = 1
+        try:
+            res = client.get('/api/projects/?page=1')
+        finally:
+            PageNumberPaginationWithPageSize.page_size = original_page_size
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['page_size'], 1)
+        self.assertEqual(len(res.data['results']), 1)
 
     def test_projects_and_tasks(self):
         client = APIClient()

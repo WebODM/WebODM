@@ -30,8 +30,6 @@ class ProjectList extends Paginated {
             projects: []
         }
 
-        this.PROJECTS_PER_PAGE = 10;
-
         this.handleDelete = this.handleDelete.bind(this);
     }
 
@@ -71,7 +69,7 @@ class ProjectList extends Paginated {
                         projects: json.results,
                         loading: false
                     });
-                    this.updatePagination(this.PROJECTS_PER_PAGE, json.count);
+                    this.updatePagination(json.page_size || json.results.length || 1, json.count);
                 }else{
                     this.setState({ 
                         error: interpolate(_("Invalid JSON response: %(error)s"), {error: JSON.stringify(json)}),
