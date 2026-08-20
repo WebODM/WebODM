@@ -628,9 +628,16 @@ class TaskThumbnail(TaskNestedView):
         if img.dtype != np.uint8:
             img = img.astype(np.float32)
 
-            # Ignore alpha values
-            minval = img[:,:,:3].min()
-            maxval = img[:,:,:3].max()
+            # Match the tiler's percentile rescale (tiler.py pmin/pmax=2/98) so the thumbnail and map view stretch identically
+            if img.shape[2] == 4:
+                valid = img[:,:,3] > 0
+            else:
+                valid = (img[:,:,:3] != 0).any(axis=2)
+            rgb = img[:,:,:3][valid]
+            if rgb.size > 0:
+                minval, maxval = np.percentile(rgb, [2, 98])
+            else:
+                minval, maxval = 0.0, 1.0
 
             if minval != maxval:
                 img[:,:,:3] -= minval
