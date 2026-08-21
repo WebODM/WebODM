@@ -643,6 +643,8 @@ class TaskThumbnail(TaskNestedView):
                 img[:,:,:3] -= minval
                 img[:,:,:3] *= (255.0/(maxval-minval))
 
+            img[:,:,:3] = np.clip(img[:,:,:3], 0, 255)
+
             # Normalize alpha
             if img.shape[2] == 4:
                 img[:,:,3] = np.where(img[:,:,3]==0, 0, 255)
