@@ -628,7 +628,7 @@ class TaskThumbnail(TaskNestedView):
         if img.dtype != np.uint8:
             img = img.astype(np.float32)
 
-            # Match the tiler's percentile rescale (tiler.py pmin/pmax=2/98) so the thumbnail and map view stretch identically
+            # rescale RGB between 2nd and 98th percentile, ignore alpha
             if img.shape[2] == 4:
                 valid = img[:,:,3] > 0
             else:
@@ -643,6 +643,7 @@ class TaskThumbnail(TaskNestedView):
                 img[:,:,:3] -= minval
                 img[:,:,:3] *= (255.0/(maxval-minval))
 
+            # clip values below 2nd or above 98th percentiles
             img[:,:,:3] = np.clip(img[:,:,:3], 0, 255)
 
             # Normalize alpha
