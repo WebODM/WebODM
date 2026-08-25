@@ -309,9 +309,6 @@ class Map extends React.Component {
           .done(mres => {
             const { scheme, name, maxzoom, statistics: mresStatistics } = mres;
 
-            // rescale orthophoto statistics over the rendered RGB bands only
-            const statistics = type === 'orthophoto' ? Utils.getRgbStatistics(mresStatistics, meta.task.orthophoto_bands) : mresStatistics;
-
             const bounds = Leaflet.latLngBounds(
                 [mres.bounds.value.slice(0, 2).reverse(), mres.bounds.value.slice(2, 4).reverse()]
               );
@@ -322,6 +319,8 @@ class Map extends React.Component {
             
             // Set rescale
             if (statistics){
+                // rescale orthophoto statistics over the rendered RGB bands only
+                const filteredStatistics = type === 'orthophoto' ? Utils.getRgbStatistics(mresStatistics, meta.task.orthophoto_bands) : mresStatistics;
                 const params = Utils.queryParams({search: tileUrl.slice(tileUrl.indexOf("?"))});
                 if (statistics["1"]){
                     // Add rescale
@@ -329,15 +328,15 @@ class Map extends React.Component {
                     let max = -Infinity;
                     if (type === 'plant' || type === 'orthophoto'){
                       // percentile
-                      for (let b in statistics){
-                        min = Math.min(min, statistics[b]["percentiles"][0]);
-                        max = Math.max(max, statistics[b]["percentiles"][1]);
+                      for (let b in filteredStatistics){
+                        min = Math.min(min, filteredStatistics[b]["percentiles"][0]);
+                        max = Math.max(max, filteredStatistics[b]["percentiles"][1]);
                       }
                     }else{
                       // min/max
-                      for (let b in statistics){
-                        min = Math.min(min, statistics[b]["min"]);
-                        max = Math.max(max, statistics[b]["max"]);
+                      for (let b in filteredStatistics){
+                        min = Math.min(min, filteredStatistics[b]["min"]);
+                        max = Math.max(max, filteredStatistics[b]["max"]);
                       }
                     }
                     params.rescale = encodeURIComponent(`${min},${max}`);              
