@@ -250,6 +250,15 @@ export default class LayersControlLayer extends React.Component {
     }
   }
 
+  // Filter color statistics of orthophotos to RGB only
+  getStatistics = () => {
+    const { statistics } = this.tmeta;
+    if (this.meta.type === 'orthophoto' && this.state.formula === "" && this.meta.task){
+        return Utils.getRgbStatistics(statistics, this.meta.task.orthophoto_bands);
+    }
+    return statistics;
+  }
+
   handleSelectBands = e => {
       this.setState({bands: e.target.value});
   }
@@ -267,7 +276,7 @@ export default class LayersControlLayer extends React.Component {
             this.tmeta = this.props.layer[Symbol.for("tile-meta")] = mres;
             
             // Update rescale values
-            const { statistics } = this.tmeta;
+            const statistics = this.getStatistics();
             if (statistics && statistics["1"]){
                 let min = Infinity;
                 let max = -Infinity;

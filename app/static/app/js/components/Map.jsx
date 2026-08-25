@@ -307,7 +307,10 @@ class Map extends React.Component {
 
         this.tileJsonRequests.push($.getJSON(metaUrl)
           .done(mres => {
-            const { scheme, name, maxzoom, statistics } = mres;
+            const { scheme, name, maxzoom, statistics: mresStatistics } = mres;
+
+            // rescale orthophoto statistics over the rendered RGB bands only
+            const statistics = type === 'orthophoto' ? Utils.getRgbStatistics(mresStatistics, meta.task.orthophoto_bands) : mresStatistics;
 
             const bounds = Leaflet.latLngBounds(
                 [mres.bounds.value.slice(0, 2).reverse(), mres.bounds.value.slice(2, 4).reverse()]

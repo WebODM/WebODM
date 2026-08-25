@@ -69,26 +69,6 @@ def get_zoom_safe(src_dst):
     return minzoom, maxzoom
 
 
-def get_orthophoto_indexes(src):
-    """Band indexes rendered for an orthophoto (RGB), or None for the default (all non-alpha bands)."""
-    ci = src.dataset.colorinterp
-    # More than 4 bands?
-    if len(ci) > 4:
-        # Try to find RGBA band order
-        if ColorInterp.red in ci and \
-                ColorInterp.green in ci and \
-                ColorInterp.blue in ci:
-            return (ci.index(ColorInterp.red) + 1,
-                    ci.index(ColorInterp.green) + 1,
-                    ci.index(ColorInterp.blue) + 1,)
-        else:
-            # Fallback to first three
-            return (1, 2, 3,)
-    elif has_alpha_band(src.dataset):
-        return non_alpha_indexes(src.dataset)
-    return None
-
-
 def get_tile_url(task, tile_type, query_params):
     url = '/api/projects/{}/tasks/{}/{}/tiles/{{z}}/{{x}}/{{y}}'.format(task.project.id, task.id, tile_type)
     params = {}
@@ -239,12 +219,6 @@ class Metadata(TaskNestedView):
 
                 if has_alpha_band(src.dataset):
                     band_count -= 1
-
-                # compute orthophoto statistics only for the bands that are actually rendered
-                indexes = None
-                if tile_type == 'orthophoto' and expr is None:
-                    indexes = get_orthophoto_indexes(src)
-
                 nodata = None
                 # Workaround for https://github.com/WebODM/WebODM/issues/894
                 if tile_type == 'orthophoto':
@@ -262,7 +236,7 @@ class Metadata(TaskNestedView):
                     metadata = RioMetadata(statistics=stats, **src.info().dict())
                 else:
                     metadata = src.metadata(pmin=pmin, pmax=pmax, hist_options=histogram_options, nodata=nodata,
-                                            bounds=bounds, vrt_options=vrt_options, indexes=indexes)
+                                            bounds=bounds, vrt_options=vrt_options)
                 info = json.loads(metadata.json())
         except IndexError as e:
             # Caught when trying to get an invalid raster metadata
@@ -440,6 +414,7 @@ class Tiles(TaskNestedView):
                 raise exceptions.NotFound(_("Outside of bounds"))
 
             minzoom, maxzoom = get_zoom_safe(src)
+            has_alpha = has_alpha_band(src.dataset)
             if z < minzoom - ZOOM_EXTRA_LEVELS or z > maxzoom + ZOOM_EXTRA_LEVELS:
                 raise exceptions.NotFound()
 
@@ -463,7 +438,21 @@ class Tiles(TaskNestedView):
 
             # Handle N-bands datasets for orthophotos (not plant health)
             if tile_type == 'orthophoto' and expr is None:
-                indexes = get_orthophoto_indexes(src)
+                ci = src.dataset.colorinterp
+                # More than 4 bands?
+                if len(ci) > 4:
+                    # Try to find RGBA band order
+                    if ColorInterp.red in ci and \
+                            ColorInterp.green in ci and \
+                            ColorInterp.blue in ci:
+                        indexes = (ci.index(ColorInterp.red) + 1,
+                                   ci.index(ColorInterp.green) + 1,
+                                   ci.index(ColorInterp.blue) + 1,)
+                    else:
+                        # Fallback to first three
+                        indexes = (1, 2, 3,)
+                elif has_alpha:
+                    indexes = non_alpha_indexes(src.dataset)
 
             # Workaround for https://github.com/WebODM/WebODM/issues/894
             if nodata is None and tile_type == 'orthophoto':
