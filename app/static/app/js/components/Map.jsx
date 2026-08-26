@@ -307,7 +307,7 @@ class Map extends React.Component {
 
         this.tileJsonRequests.push($.getJSON(metaUrl)
           .done(mres => {
-            const { scheme, name, maxzoom, statistics: mresStatistics } = mres;
+            const { scheme, name, maxzoom, statistics } = mres;
 
             const bounds = Leaflet.latLngBounds(
                 [mres.bounds.value.slice(0, 2).reverse(), mres.bounds.value.slice(2, 4).reverse()]
@@ -319,14 +319,14 @@ class Map extends React.Component {
             
             // Set rescale
             if (statistics){
-                // rescale orthophoto statistics over the rendered RGB bands only
-                const filteredStatistics = type === 'orthophoto' ? Utils.getRgbStatistics(mresStatistics, meta.task.orthophoto_bands) : mresStatistics;
                 const params = Utils.queryParams({search: tileUrl.slice(tileUrl.indexOf("?"))});
                 if (statistics["1"]){
                     // Add rescale
                     let min = Infinity;
                     let max = -Infinity;
                     if (type === 'plant' || type === 'orthophoto'){
+                      // rescale orthophoto statistics over the rendered RGB bands only
+                      const filteredStatistics = type === 'orthophoto' ? Utils.getRgbStatistics(statistics, meta.task.orthophoto_bands) : statistics;
                       // percentile
                       for (let b in filteredStatistics){
                         min = Math.min(min, filteredStatistics[b]["percentiles"][0]);
@@ -334,9 +334,9 @@ class Map extends React.Component {
                       }
                     }else{
                       // min/max
-                      for (let b in filteredStatistics){
-                        min = Math.min(min, filteredStatistics[b]["min"]);
-                        max = Math.max(max, filteredStatistics[b]["max"]);
+                      for (let b in statistics){
+                        min = Math.min(min, statistics[b]["min"]);
+                        max = Math.max(max, statistics[b]["max"]);
                       }
                     }
                     params.rescale = encodeURIComponent(`${min},${max}`);              

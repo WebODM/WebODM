@@ -628,7 +628,8 @@ class TaskThumbnail(TaskNestedView):
         if img.dtype != np.uint8:
             img = img.astype(np.float32)
 
-            # rescale RGB between 2nd and 98th percentile, ignore alpha
+            # rescale RGB between 2nd and 98th percentile
+            # filter out nodata pixels (alpha = 0 or pure black)
             if img.shape[2] == 4:
                 valid = img[:,:,3] > 0
             else:
