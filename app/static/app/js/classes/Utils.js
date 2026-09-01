@@ -67,6 +67,26 @@ export default {
       return this.buildUrlWithQuery(url, q);
     },
 
+    // Filter the statistics of an orthophoto to the RGB bands shown in the viewer for color scaling
+    getRgbStatistics: function(statistics, orthophoto_bands){
+        if (!statistics || !orthophoto_bands) return statistics;
+
+        let indexes = null;
+        const descriptions = orthophoto_bands.map(b => b.description ? b.description.toLowerCase() : null);
+        if (descriptions.indexOf("red") !== -1 && descriptions.indexOf("green") !== -1 && descriptions.indexOf("blue") !== -1){
+            indexes = ["red", "green", "blue"].map(c => String(descriptions.indexOf(c) + 1));
+        }else{
+            // Fallback to first three bands
+            indexes = ["1", "2", "3"];
+        }
+
+        const filtered = {};
+        for (let k in statistics){
+            if (indexes.indexOf(k) !== -1) filtered[k] = statistics[k];
+        }
+        return Object.keys(filtered).length > 0 ? filtered : statistics;
+    },
+
     clone: function(obj){
       return JSON.parse(JSON.stringify(obj));
     },

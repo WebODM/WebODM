@@ -628,13 +628,24 @@ class TaskThumbnail(TaskNestedView):
         if img.dtype != np.uint8:
             img = img.astype(np.float32)
 
-            # Ignore alpha values
-            minval = img[:,:,:3].min()
-            maxval = img[:,:,:3].max()
+            # rescale RGB between 2nd and 98th percentile
+            # filter out nodata pixels (alpha = 0 or pure black)
+            if img.shape[2] == 4:
+                valid = img[:,:,3] > 0
+            else:
+                valid = (img[:,:,:3] != 0).any(axis=2)
+            rgb = img[:,:,:3][valid]
+            if rgb.size > 0:
+                minval, maxval = np.percentile(rgb, [2, 98])
+            else:
+                minval, maxval = 0.0, 1.0
 
             if minval != maxval:
                 img[:,:,:3] -= minval
                 img[:,:,:3] *= (255.0/(maxval-minval))
+
+            # clip values below 2nd or above 98th percentiles
+            img[:,:,:3] = np.clip(img[:,:,:3], 0, 255)
 
             # Normalize alpha
             if img.shape[2] == 4:

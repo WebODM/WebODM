@@ -324,17 +324,19 @@ class Map extends React.Component {
                     // Add rescale
                     let min = Infinity;
                     let max = -Infinity;
-                    if (type === 'plant'){
+                    if (type === 'plant' || type === 'orthophoto'){
+                      // rescale orthophoto statistics over the rendered RGB bands only
+                      const filteredStatistics = type === 'orthophoto' ? Utils.getRgbStatistics(statistics, meta.task.orthophoto_bands) : statistics;
                       // percentile
-                      for (let b in statistics){
-                        min = Math.min(statistics[b]["percentiles"][0]);
-                        max = Math.max(statistics[b]["percentiles"][1]);
+                      for (let b in filteredStatistics){
+                        min = Math.min(min, filteredStatistics[b]["percentiles"][0]);
+                        max = Math.max(max, filteredStatistics[b]["percentiles"][1]);
                       }
                     }else{
                       // min/max
                       for (let b in statistics){
-                        min = Math.min(statistics[b]["min"]);
-                        max = Math.max(statistics[b]["max"]);
+                        min = Math.min(min, statistics[b]["min"]);
+                        max = Math.max(max, statistics[b]["max"]);
                       }
                     }
                     params.rescale = encodeURIComponent(`${min},${max}`);              
