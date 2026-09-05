@@ -5,7 +5,6 @@ import shutil
 import rasterio
 import re
 import subprocess
-from shlex import quote
 from rio_tiler.utils import has_alpha_band
 from webodm import settings
 
@@ -108,7 +107,7 @@ def make_cogeo_gdal(src_path):
                         "-co", "BIGTIFF=IF_SAFER",
                         "-co", "RESAMPLING=NEAREST",
                         "--config", "GDAL_NUM_THREADS", "ALL_CPUS",
-                        quote(src_path), quote(tmpfile)])
+                        src_path, tmpfile])
     except Exception as e:
         logger.warning("Cannot create Cloud Optimized GeoTIFF: %s" % str(e))
 

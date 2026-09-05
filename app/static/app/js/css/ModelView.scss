@@ -29,6 +29,10 @@
         width: 100% !important;
         height: 100% !important;
 
+        &:focus, &:focus-visible{
+            outline: none;
+        }
+
         &.pointer-cursor{
             cursor: pointer;
         }

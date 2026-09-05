@@ -6,7 +6,6 @@ import rasterio
 import shutil
 from app.geoutils import geom_transform_wkt_bbox
 from django.contrib.gis.geos import GEOSGeometry
-from app.security import double_quote
 from osgeo import osr
 
 logger = logging.getLogger('app.logger')
@@ -26,7 +25,7 @@ def export_pointcloud(input, output, **opts):
 
     if epsg:
         reprojection_args = ["reprojection",
-                            "--filters.reprojection.out_srs=%s" % double_quote("EPSG:" + str(epsg))]
+                            "--filters.reprojection.out_srs=EPSG:%s" % epsg]
     elif proj:
         srs = osr.SpatialReference()
         if srs.ImportFromProj4(proj) != 0:
