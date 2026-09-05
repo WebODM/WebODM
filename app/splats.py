@@ -299,6 +299,8 @@ def prepare_export(task, output_dir, image_size=0, progress_callback=None):
     images_dir = os.path.join(output_dir, 'images')
     export_images = []
     resize_queue = []
+    pdal_bin = shutil.which("pdal")
+
     for shot in shots:
         try:
             image_file = task.get_image_path(shot['filename'])
@@ -320,7 +322,7 @@ def prepare_export(task, output_dir, image_size=0, progress_callback=None):
             sample = 0
             target_points = 125000
             try:
-                p = subprocess.run(['pdal', 'info', '--summary', laz_file],
+                p = subprocess.run([pdal_bin, 'info', '--summary', laz_file],
                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
                 summary = json.loads(p.stdout)['summary']
                 bounds = summary['bounds']
@@ -334,7 +336,7 @@ def prepare_export(task, output_dir, image_size=0, progress_callback=None):
             # while we resize the images
             tmpdir = tempfile.mkdtemp(prefix='splats_')
             ply_file = os.path.join(tmpdir, 'points.ply')
-            cmd = ['pdal', 'translate', '-i', laz_file, '-o', ply_file]
+            cmd = [pdal_bin, 'translate', '-i', laz_file, '-o', ply_file]
             if sample > 0:
                 cmd += ['sample', '--filters.sample.radius=%s' % sample]
             cmd += ['--writers.ply.storage_mode=little endian',

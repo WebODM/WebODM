@@ -80,7 +80,7 @@ class TestSplats(BootTestCase):
                     {'type': 'readers.text', 'filename': csv_file},
                     {'type': 'writers.las', 'filename': task.get_asset_file_or_stream('georeferenced_model.laz')}
                 ], f)
-            subprocess.run(['pdal', 'pipeline', pipeline_file], check=True)
+            subprocess.run([shutil.which('pdal'), 'pipeline', pipeline_file], check=True)
         finally:
             shutil.rmtree(tmpdir)
 
