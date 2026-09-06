@@ -6,7 +6,7 @@
 
 > **If you like WebODM, take a second and ⭐ the project 🙏**
 
-A user-friendly, commercial grade software for drone image processing. Generate georeferenced maps, point clouds, elevation models and textured 3D models from aerial images. It supports multiple engines for processing, currently [ODX](https://github.com/WebODM/ODX), [MicMac](https://github.com/OpenDroneMap/NodeMICMAC/) and [LGT](https://webodm.net/lgt).
+A user-friendly, commercial grade software for drone image processing. Generate georeferenced maps, point clouds, elevation models, textured 3D models and gaussian splats from aerial images. It supports multiple engines for processing, currently [ODX](https://github.com/WebODM/ODX), [MicMac](https://github.com/OpenDroneMap/NodeMICMAC/) and [LGT](https://webodm.net/lgt).
 
 ![image](https://github.com/user-attachments/assets/aa1c4340-728d-46c3-a8e1-53bcb4851adc)
 
