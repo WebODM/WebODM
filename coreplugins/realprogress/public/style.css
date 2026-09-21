@@ -1,0 +1,16 @@
+/* The label now carries percentage, stage, counts and remaining time. It needs
+   room to breathe, but the column it lives in is narrow and changes width with
+   the viewport, so main.js drops detail until the text fits. What is needed
+   here is only that the span can be measured: a single line, and an ellipsis
+   if the shortest variant is still too wide. */
+.status-label.real-progress {
+  font-variant-numeric: tabular-nums;
+}
+.status-label.real-progress span {
+  display: inline-block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
