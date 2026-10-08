@@ -3,9 +3,14 @@
         margin: 0;
     }
 
+    .error{
+        overflow-wrap: break-word;
+        word-break: break-word;
+        display: block;
+    }
+
     .error.long{
         overflow: scroll;
-        display: block;
         max-height: 200px;
     }
 
