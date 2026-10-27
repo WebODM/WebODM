@@ -65,17 +65,17 @@ export default class ApiFactory{
         args._placeholder = {};
         
         preTrigger(args, responseCb);
-        if (responseCb){
-          this.events.addListener(`${api.namespace}::${eventName}::Response`, response => {
-            // Give time to all listeners to receive the replies
-            // then remove the listener to avoid sending duplicate responses
-            const curSub = this.events._currentSubscription;
 
-            setTimeout(() => {
-              curSub.remove();
-            }, 0);
+        // Each listener replies once: wait for all of their replies
+        // to this trigger, then stop listening
+        let pending = this.events.listeners(`${api.namespace}::${eventName}`).length;
+        if (responseCb && pending > 0){
+          const subscription = this.events.addListener(`${api.namespace}::${eventName}::Response`, response => {
+            if (response.placeholder !== args._placeholder) return;
 
-            if (response.placeholder === args._placeholder) responseCb(response.result);
+            pending--;
+            if (pending === 0) subscription.remove();
+            responseCb(response.result);
           });
         }
         this.events.emit(`${api.namespace}::${eventName}`, args);
