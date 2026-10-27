@@ -202,6 +202,14 @@ class NewTaskPanel extends React.Component {
     }
   }
 
+  // [longitude, latitude] of each photo with a position, once the map has read them
+  getPhotoPositions = () => {
+    if (!this.mapPreview) return [];
+    return this.mapPreview.exifData
+      .filter(exif => exif.gps)
+      .map(exif => [exif.gps.longitude, exif.gps.latitude]);
+  };
+
   handlePolygonChange = () => {
     if (this.taskForm) this.taskForm.forceUpdate();
   }
@@ -284,6 +292,9 @@ class NewTaskPanel extends React.Component {
               suggestedTaskName={this.handleSuggestedTaskName}
               getCropPolygon={this.getCropPolygon}
               getGcpFile={this.getGcpFile}
+              getFiles={this.props.getFiles}
+              filesCount={this.props.filesCount}
+              getPhotoPositions={this.getPhotoPositions}
               ref={(domNode) => { if (domNode) this.taskForm = domNode; }}
             />
 

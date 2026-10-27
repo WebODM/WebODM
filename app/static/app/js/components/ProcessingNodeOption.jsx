@@ -3,6 +3,7 @@ import '../css/ProcessingNodeOption.scss';
 import PropTypes from 'prop-types';
 import $ from 'jquery';
 import { _ } from '../classes/gettext';
+import TaskOptionsPluginItems from './TaskOptionsPluginItems';
 
 const warnings = {
     'ignore-gsd': _("You might run out of memory if you use this option.")
@@ -29,6 +30,10 @@ class ProcessingNodeOption extends React.Component {
       PropTypes.array
     ]),
     help: PropTypes.string,
+
+    // Given only when a plugin uses addTaskOptionControl
+    pluginContext: PropTypes.object,
+    taskOptions: PropTypes.object
   };
 
   constructor(props){
@@ -50,6 +55,13 @@ class ProcessingNodeOption extends React.Component {
 
   getValue(){
     return this.state.value !== "" ? this.state.value : undefined;
+  }
+
+  // Sets the value as if the user had typed it (undefined, null or false: the default)
+  setValue = value => {
+    if (value === undefined || value === null || value === false ||
+        (this.isEnumType() && value === this.props.defaultValue)) value = "";
+    this.setState({value});
   }
 
   setTooltips(domNode){
@@ -106,6 +118,11 @@ class ProcessingNodeOption extends React.Component {
         };
         reader.readAsText(file);
     }
+  }
+
+  getPluginOption(){
+    const { name, type, domain, help, defaultValue } = this.props;
+    return { name, type, domain, help, defaultValue };
   }
 
   handleHelp = e => {
@@ -184,6 +201,20 @@ class ProcessingNodeOption extends React.Component {
         {this.state.value !== "" ? 
         <button type="submit" className="btn glyphicon glyphicon glyphicon-repeat btn-default" data-toggle="tooltip" data-placement="top" title={_("Reset to default")} onClick={this.resetToDefault}></button> :
         ""}
+
+        {this.props.taskOptions ?
+        <TaskOptionsPluginItems
+          hook="addTaskOptionControl"
+          className="option-plugin-controls"
+          inline={true}
+          args={{option: this.getPluginOption(), context: this.props.pluginContext}}
+          itemProps={{
+            option: this.getPluginOption(),
+            value: this.getValue(),
+            setValue: this.setValue,
+            context: this.props.pluginContext,
+            taskOptions: this.props.taskOptions
+          }} /> : ""}
 
         {warningMsg}
       </div>

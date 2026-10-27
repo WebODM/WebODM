@@ -6,6 +6,7 @@ import ErrorMessage from './ErrorMessage';
 import PropTypes from 'prop-types';
 import Storage from '../classes/Storage';
 import TagsField from './TagsField';
+import TaskOptionsPluginItems from './TaskOptionsPluginItems';
 import $ from 'jquery';
 import { _, interpolate } from '../classes/gettext';
 
@@ -29,7 +30,10 @@ class EditTaskForm extends React.Component {
       task: PropTypes.object,
       suggestedTaskName: PropTypes.oneOfType([PropTypes.string, PropTypes.func]),
       getCropPolygon: PropTypes.func,
-      getGcpFile: PropTypes.func
+      getGcpFile: PropTypes.func,
+      getFiles: PropTypes.func,
+      filesCount: PropTypes.number,
+      getPhotoPositions: PropTypes.func
   };
 
   constructor(props){
@@ -409,6 +413,68 @@ class EditTaskForm extends React.Component {
     };
   }
 
+  // What plugins know of the task being set up
+  getPluginContext(){
+    return {
+      mode: this.props.task !== null ? "edit" : "new",
+      task: this.props.task,
+      node: this.state.selectedNode,
+      preset: this.state.selectedPreset,
+      inReview: this.props.inReview,
+      getFiles: this.props.getFiles,
+      filesCount: this.props.filesCount,
+      getCropPolygon: this.props.getCropPolygon,
+      getGcpFile: this.props.getGcpFile,
+      getPhotoPositions: this.props.getPhotoPositions
+    };
+  }
+
+  // What plugins can read and change from the form: values set here
+  // go in the "(Custom)" preset, as if the user had edited the options
+  getPluginTaskOptions(){
+    const availableOptions = this.state.selectedNode.options;
+    const getOptions = () => this.getAvailableOptionsOnly(this.state.selectedPreset.options, this.state.selectedNode.options);
+    const setOptions = options => {
+      options = options.filter(opt => availableOptions.find(o => o.name === opt.name));
+      if (options.length > 0) this.setCustomPresetOptions(options);
+      return options.length > 0;
+    };
+
+    return {
+      getOptions,
+      getOption: name => {
+        const opt = getOptions().find(o => o.name === name);
+        return opt ? opt.value : undefined;
+      },
+      setOption: (name, value) => setOptions([{name, value}]),
+      setOptions,
+      resetOption: name => setOptions([{name, value: undefined}]),
+      availableOptions
+    };
+  }
+
+  // Selects a "(Custom)" preset with the selected preset's options and these changes
+  // (undefined, null, "" or false: the default)
+  setCustomPresetOptions(changes){
+    this.setState(state => {
+      let options = Utils.clone(state.selectedPreset.options);
+      changes.forEach(({name, value}) => {
+        options = options.filter(opt => opt.name !== name);
+        if (value !== undefined && value !== null && value !== "" && value !== false) options.push({name, value});
+      });
+
+      const customPreset = {
+        id: -1,
+        name: "(" + _("Custom") + ")",
+        options,
+        system: true
+      };
+      const presets = state.presets.filter(p => p.id !== -1);
+      presets.unshift(customPreset);
+      return {presets, selectedPreset: customPreset};
+    });
+  }
+
   handleEditPreset(){
     // If the user tries to edit a system preset
     // set the "Custom..." options to it
@@ -631,10 +697,19 @@ class EditTaskForm extends React.Component {
             </div>
           </div>
 
+          {TaskOptionsPluginItems.hasListeners("addTaskOptionsFormItem") ?
+            <TaskOptionsPluginItems
+              hook="addTaskOptionsFormItem"
+              className="task-form-plugin-items"
+              args={{context: this.getPluginContext()}}
+              itemProps={{context: this.getPluginContext(), taskOptions: this.getPluginTaskOptions()}} />
+          : ""}
+
           {this.state.editingPreset ? 
             <EditPresetDialog
               preset={this.state.selectedPreset}
               availableOptions={this.state.selectedNode.options}
+              pluginContext={this.getPluginContext()}
               onHide={this.handleCancelEditPreset}
               saveAction={this.handlePresetSave}
               deleteAction={this.handleDeletePreset}
