@@ -1,7 +1,6 @@
 import React from 'react';
 import { shallow, mount } from 'enzyme';
 import ProcessingNodeOption from '../ProcessingNodeOption';
-import TaskOptionsPluginItems from '../TaskOptionsPluginItems';
 import PluginsAPI from '../../classes/plugins/API';
 import $ from 'jquery';
 
@@ -20,28 +19,42 @@ describe('<ProcessingNodeOption />', () => {
     expect(wrapper.exists()).toBe(true);
   })
 
-  it('has no plugin controls unless it is given the task options', () => {
-    PluginsAPI.Dashboard.addTaskOptionControl(() => () => <button className="plugin-control" />);
-    const wrapper = shallow(<ProcessingNodeOption name="boundary" defaultValue="" domain="json" />);
-    expect(wrapper.find(TaskOptionsPluginItems).length).toBe(0);
+  it('is unchanged and leaves no listener when no plugin adds a control', async () => {
+    const before = mount(<ProcessingNodeOption name="boundary" defaultValue="" domain="json" />).html();
+    await replies();
+
+    expect(PluginsAPI.events.listeners("Dashboard::addTaskOptionControl::Response").length).toBe(0);
+    expect(mount(<ProcessingNodeOption name="boundary" defaultValue="" domain="json" />).html()).toBe(before);
   })
 
-  it('shows the controls plugins add to it, which can set its value', async () => {
+  it('shows the controls plugins add beside it, which can read and set its value', async () => {
     PluginsAPI.Dashboard.addTaskOptionControl(args => {
-      if (args.option.name !== "boundary") return;
-      return props => <button className="plugin-control" onClick={() => props.setValue('{"type": "Polygon"}')}>{props.context.mode}</button>;
+      if (args.option.name !== "boundary") return null;
+      return <button className="plugin-control" onClick={() => args.setValue(args.getValue() + "!")}>{args.option.domain}</button>;
     });
-    const context = {mode: "edit"};
-    const boundary = mount(<ProcessingNodeOption name="boundary" defaultValue="" domain="json" pluginContext={context} taskOptions={{}} />);
-    const crop = mount(<ProcessingNodeOption name="crop" defaultValue="3" pluginContext={context} taskOptions={{}} />);
+    const boundary = mount(<ProcessingNodeOption name="boundary" defaultValue="" domain="json" value="{}" />);
+    const crop = mount(<ProcessingNodeOption name="crop" defaultValue="3" />);
     await replies();
     boundary.update();
     crop.update();
 
     expect(crop.find('.plugin-control').length).toBe(0);
-    expect(boundary.find('.plugin-control').text()).toBe("edit");
+    expect(boundary.find('.plugin-control').text()).toBe("json");
     boundary.find('.plugin-control').simulate('click');
-    expect(boundary.instance().getValue()).toBe('{"type": "Polygon"}');
+    expect(boundary.instance().getValue()).toBe("{}!");
+  })
+
+  it('tells plugins the task being edited and the photo positions of a new one', () => {
+    const asked = [];
+    PluginsAPI.Dashboard.addTaskOptionControl(args => { asked.push(args); return null; });
+    const task = {id: "1"};
+    mount(<ProcessingNodeOption name="boundary" defaultValue="" task={task} />);
+    mount(<ProcessingNodeOption name="boundary" defaultValue="" getPhotoPositions={() => [[11, 46]]} />);
+
+    expect(asked[0].task).toBe(task);
+    expect(asked[0].getPhotoPositions()).toEqual([]);
+    expect(asked[1].task).toBe(null);
+    expect(asked[1].getPhotoPositions()).toEqual([[11, 46]]);
   })
 
   it('sets a value as if the user had typed it', () => {

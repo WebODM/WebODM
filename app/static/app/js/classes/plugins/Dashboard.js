@@ -6,8 +6,6 @@ export default {
     "addNewTaskPanelItem",
     "addNewTaskButton",
     "addImportTaskItem",
-    "addTaskOptionsFormItem",
-    "addTaskOptionsPanelItem",
     "addTaskOptionControl"
   ]
 };

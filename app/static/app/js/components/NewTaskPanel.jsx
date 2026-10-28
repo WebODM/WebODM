@@ -292,8 +292,6 @@ class NewTaskPanel extends React.Component {
               suggestedTaskName={this.handleSuggestedTaskName}
               getCropPolygon={this.getCropPolygon}
               getGcpFile={this.getGcpFile}
-              getFiles={this.props.getFiles}
-              filesCount={this.props.filesCount}
               getPhotoPositions={this.getPhotoPositions}
               ref={(domNode) => { if (domNode) this.taskForm = domNode; }}
             />

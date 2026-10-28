@@ -3,7 +3,6 @@ import React from 'react';
 import FormDialog from './FormDialog';
 import ProcessingNodeOption from './ProcessingNodeOption';
 import PresetUtils from '../classes/PresetUtils';
-import TaskOptionsPluginItems from './TaskOptionsPluginItems';
 import PropTypes from 'prop-types';
 import values from 'object.values';
 import { _ } from '../classes/gettext';
@@ -264,7 +263,8 @@ class EditPresetDialog extends React.Component {
         saveAction: PropTypes.func.isRequired,
         deleteAction: PropTypes.func.isRequired,
         onHide: PropTypes.func,
-        pluginContext: PropTypes.object
+        task: PropTypes.object,
+        getPhotoPositions: PropTypes.func
     };
 
     constructor(props){
@@ -311,26 +311,6 @@ class EditPresetDialog extends React.Component {
             };
           })
           .filter(option => option.value !== undefined);
-    }
-
-    // What plugins can read and change in this dialog: values set here
-    // are as if the user had typed them
-    getPluginTaskOptions(availableOptions){
-        const setOption = (name, value) => {
-            const option = this.options[name];
-            if (!option) return false;
-            option.setValue(value);
-            return true;
-        };
-
-        return {
-            getOptions: this.getOptions,
-            getOption: name => this.options[name] ? this.options[name].getValue() : undefined,
-            setOption,
-            setOptions: options => options.filter(opt => setOption(opt.name, opt.value)).length > 0,
-            resetOption: name => setOption(name, undefined),
-            availableOptions
-        };
     }
 
     getFormData(){
@@ -411,7 +391,8 @@ class EditPresetDialog extends React.Component {
         return (
             <ProcessingNodeOption 
                 {...option}
-                {...this.optionPluginProps}
+                task={this.props.task}
+                getPhotoPositions={this.props.getPhotoPositions}
                 key={option.name}
                 ref={this.setOptionRef(option.name)} 
             />
@@ -525,12 +506,6 @@ class EditPresetDialog extends React.Component {
         let options = PresetUtils.getAvailableOptions(this.props.preset.options, this.props.availableOptions)
                                  .filter(option => OPTS_BLACKLIST.indexOf(option.name.toLowerCase()) === -1);
         
-        // Plugins' items and option controls, when a plugin adds some
-        const showPanelItems = TaskOptionsPluginItems.hasListeners("addTaskOptionsPanelItem"),
-              showOptionControls = TaskOptionsPluginItems.hasListeners("addTaskOptionControl"),
-              taskOptions = showPanelItems || showOptionControls ? this.getPluginTaskOptions(options) : null;
-        this.optionPluginProps = showOptionControls ? { pluginContext: this.props.pluginContext, taskOptions } : {};
-
         return (
             <div className="edit-preset-dialog">
                 <FormDialog {...this.props}
@@ -550,14 +525,6 @@ class EditPresetDialog extends React.Component {
                         <input type="text" className="form-control" ref={(domNode) => { this.nameInput = domNode; }} value={this.state.name} onChange={this.handleChange('name')} />
                     </div>,
                     <hr key="hr"/>]
-                  : ""}
-
-                  {showPanelItems ?
-                    <TaskOptionsPluginItems
-                        hook="addTaskOptionsPanelItem"
-                        className="preset-plugin-items"
-                        args={{context: this.props.pluginContext}}
-                        itemProps={{context: this.props.pluginContext, taskOptions}} />
                   : ""}
 
                   <div className="options-toolbar">

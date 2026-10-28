@@ -3,7 +3,7 @@ import '../css/ProcessingNodeOption.scss';
 import PropTypes from 'prop-types';
 import $ from 'jquery';
 import { _ } from '../classes/gettext';
-import TaskOptionsPluginItems from './TaskOptionsPluginItems';
+import PluginsAPI from '../classes/plugins/API';
 
 const warnings = {
     'ignore-gsd': _("You might run out of memory if you use this option.")
@@ -31,16 +31,18 @@ class ProcessingNodeOption extends React.Component {
     ]),
     help: PropTypes.string,
 
-    // Given only when a plugin uses addTaskOptionControl
-    pluginContext: PropTypes.object,
-    taskOptions: PropTypes.object
+    // For plugins' controls: the task being edited (none for a new task)
+    // and the positions of a new task's photos
+    task: PropTypes.object,
+    getPhotoPositions: PropTypes.func
   };
 
   constructor(props){
     super();
 
     this.state = {
-      value: props.value !== undefined ? props.value : ""
+      value: props.value !== undefined ? props.value : "",
+      pluginControls: []
     };
 
     this.resetToDefault = this.resetToDefault.bind(this);
@@ -51,6 +53,25 @@ class ProcessingNodeOption extends React.Component {
     this.supportsFileAPI = this.supportsFileAPI.bind(this);
     this.loadFile = this.loadFile.bind(this);
     this.handleFileSelect = this.handleFileSelect.bind(this);
+  }
+
+  componentDidMount(){
+    const { name, type, domain, help, defaultValue, task, getPhotoPositions } = this.props;
+
+    PluginsAPI.Dashboard.triggerAddTaskOptionControl({
+      option: { name, type, domain, help, defaultValue },
+      getValue: () => this.getValue(),
+      setValue: this.setValue,
+      task: task || null,
+      getPhotoPositions: () => getPhotoPositions ? getPhotoPositions() : []
+    }, control => {
+      if (!control || this.unmounted) return;
+      this.setState(state => ({ pluginControls: state.pluginControls.concat([control]) }));
+    });
+  }
+
+  componentWillUnmount(){
+    this.unmounted = true;
   }
 
   getValue(){
@@ -118,11 +139,6 @@ class ProcessingNodeOption extends React.Component {
         };
         reader.readAsText(file);
     }
-  }
-
-  getPluginOption(){
-    const { name, type, domain, help, defaultValue } = this.props;
-    return { name, type, domain, help, defaultValue };
   }
 
   handleHelp = e => {
@@ -202,19 +218,7 @@ class ProcessingNodeOption extends React.Component {
         <button type="submit" className="btn glyphicon glyphicon glyphicon-repeat btn-default" data-toggle="tooltip" data-placement="top" title={_("Reset to default")} onClick={this.resetToDefault}></button> :
         ""}
 
-        {this.props.taskOptions ?
-        <TaskOptionsPluginItems
-          hook="addTaskOptionControl"
-          className="option-plugin-controls"
-          inline={true}
-          args={{option: this.getPluginOption(), context: this.props.pluginContext}}
-          itemProps={{
-            option: this.getPluginOption(),
-            value: this.getValue(),
-            setValue: this.setValue,
-            context: this.props.pluginContext,
-            taskOptions: this.props.taskOptions
-          }} /> : ""}
+        {this.state.pluginControls.map((control, i) => <React.Fragment key={i}>{control}</React.Fragment>)}
 
         {warningMsg}
       </div>
