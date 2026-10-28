@@ -1,11 +1,22 @@
 import React from 'react';
-import { shallow } from 'enzyme';
+import { shallow, mount } from 'enzyme';
 import EditPresetDialog from '../EditPresetDialog';
-import ProcessingNodeOption from '../ProcessingNodeOption';
+import PluginsAPI from '../../classes/plugins/API';
+import $ from 'jquery';
+
+// Bootstrap's tooltips are not loaded in the tests
+$.fn.tooltip = function(){ return this; };
+
+// The dialog's modal needs Bootstrap
+jest.mock('../FormDialog', () => props => <div>{props.children}</div>);
 
 const presetMock = require('../../tests/utils/MockLoader').load("preset.json");
 
 describe('<EditPresetDialog />', () => {
+  afterEach(() => {
+    PluginsAPI.events.removeAllListeners("Dashboard::addTaskOptionControl");
+  });
+
   it('renders without exploding', () => {
     const wrapper = shallow(<EditPresetDialog 
              preset={presetMock}
@@ -16,20 +27,29 @@ describe('<EditPresetDialog />', () => {
     expect(wrapper.exists()).toBe(true);
   })
 
-  it('gives each option the task and the photo positions, for plugins', () => {
-    const task = {id: "1"}, getPhotoPositions = () => [];
-    const wrapper = shallow(<EditPresetDialog
+  it('tells plugins the task, and saves the values their controls set', async () => {
+    let asked;
+    PluginsAPI.Dashboard.addTaskOptionControl(args => {
+      if (args.option.name !== "boundary") return null;
+      asked = args;
+      return <button className="plugin-control" onClick={() => args.setValue('{"type": "Polygon"}')} />;
+    });
+    const task = {id: "1"};
+    const wrapper = mount(<EditPresetDialog
              preset={{id: -1, name: "(Custom)", options: [], system: true}}
-             availableOptions={[{name: "boundary", type: "string", value: "", domain: "json", help: "Boundary"}]}
+             availableOptions={[{name: "crop", type: "float", value: "3", domain: "positive float", help: "Crop"},
+                                {name: "boundary", type: "string", value: "", domain: "json", help: "Boundary"}]}
              task={task}
-             getPhotoPositions={getPhotoPositions}
+             getPhotoPositions={() => [[11, 46]]}
              saveAction={() => {}}
              deleteAction={() => {}}
         />);
-    const option = wrapper.find(ProcessingNodeOption);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    wrapper.update();
 
-    expect(option.length).toBe(1);
-    expect(option.props().task).toBe(task);
-    expect(option.props().getPhotoPositions).toBe(getPhotoPositions);
+    expect(asked.task).toBe(task);
+    expect(asked.getPhotoPositions()).toEqual([[11, 46]]);
+    wrapper.find('.plugin-control').simulate('click');
+    expect(wrapper.instance().getFormData().options).toEqual([{name: "boundary", value: '{"type": "Polygon"}'}]);
   })
 });

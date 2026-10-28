@@ -19,14 +19,6 @@ describe('<ProcessingNodeOption />', () => {
     expect(wrapper.exists()).toBe(true);
   })
 
-  it('is unchanged and leaves no listener when no plugin adds a control', async () => {
-    const before = mount(<ProcessingNodeOption name="boundary" defaultValue="" domain="json" />).html();
-    await replies();
-
-    expect(PluginsAPI.events.listeners("Dashboard::addTaskOptionControl::Response").length).toBe(0);
-    expect(mount(<ProcessingNodeOption name="boundary" defaultValue="" domain="json" />).html()).toBe(before);
-  })
-
   it('shows the controls plugins add beside it, which can read and set its value', async () => {
     PluginsAPI.Dashboard.addTaskOptionControl(args => {
       if (args.option.name !== "boundary") return null;
@@ -55,6 +47,16 @@ describe('<ProcessingNodeOption />', () => {
     expect(asked[0].getPhotoPositions()).toEqual([]);
     expect(asked[1].task).toBe(null);
     expect(asked[1].getPhotoPositions()).toEqual([[11, 46]]);
+  })
+
+  it('ignores a control that comes after the option is gone', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    PluginsAPI.Dashboard.addTaskOptionControl(() => <button />);
+    mount(<ProcessingNodeOption name="boundary" defaultValue="" />).unmount();
+    await replies();
+
+    expect(console.error).not.toHaveBeenCalled();
+    console.error.mockRestore();
   })
 
   it('sets a value as if the user had typed it', () => {

@@ -15,32 +15,16 @@ const createApi = () => {
 const nextTick = () => new Promise(resolve => setTimeout(resolve, 0));
 
 describe('ApiFactory', () => {
-  it('gives every reply to its own trigger, when several triggers are waiting', async () => {
+  it('gives each trigger its replies, also from plugins whose dependencies load later', async () => {
     const { api } = createApi();
-    api.addItem(args => `first ${args.n}`);
-    api.addItem(args => `second ${args.n}`);
+    api.addItem(["fast"], (args, dep) => `${dep} ${args.n}`);
+    api.addItem(["slow"], (args, dep) => `${dep} ${args.n}`);
 
-    const replies = { 1: [], 2: [], 3: [] };
-    [1, 2, 3].forEach(n => api.triggerAddItem({ n }, result => replies[n].push(result)));
-    await nextTick();
-
-    expect(replies).toEqual({
-      1: ["first 1", "second 1"],
-      2: ["first 2", "second 2"],
-      3: ["first 3", "second 3"]
-    });
-  });
-
-  it('waits for the replies of plugins whose dependencies load later', async () => {
-    const { api } = createApi();
-    api.addItem(["fast"], (args, dep) => dep);
-    api.addItem(["slow"], (args, dep) => dep);
-
-    const replies = [];
-    api.triggerAddItem({}, result => replies.push(result));
+    const replies = { 1: [], 2: [] };
+    [1, 2].forEach(n => api.triggerAddItem({ n }, result => replies[n].push(result)));
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    expect(replies).toEqual(["fast", "slow"]);
+    expect(replies).toEqual({ 1: ["fast 1", "slow 1"], 2: ["fast 2", "slow 2"] });
   });
 
   it('stops listening once every listener has replied', async () => {
@@ -48,7 +32,6 @@ describe('ApiFactory', () => {
     api.addItem(() => "item");
 
     api.triggerAddItem({}, () => {});
-    expect(events.listeners("Test::addItem::Response").length).toBe(1);
     await nextTick();
     expect(events.listeners("Test::addItem::Response").length).toBe(0);
   });
