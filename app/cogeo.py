@@ -5,7 +5,7 @@ import shutil
 import rasterio
 import re
 import subprocess
-from rio_tiler.utils import has_alpha_band
+from app.vendor.rio_tiler.utils import has_alpha_band
 from webodm import settings
 
 logger = logging.getLogger('app.logger')

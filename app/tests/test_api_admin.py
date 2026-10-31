@@ -3,7 +3,7 @@ import jwt
 from django.contrib.auth.models import User, Group
 from rest_framework import status
 from rest_framework.test import APIClient
-from rest_framework_jwt.settings import api_settings
+from app.api.authentication import JWT_AUTH_HEADER_PREFIX
 from django.contrib.auth.hashers import check_password
 
 from .classes import BootTestCase
@@ -33,7 +33,7 @@ class TestApiAdmin(BootTestCase):
         })
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         super_user_token = res.data['token']
-        client = APIClient(HTTP_AUTHORIZATION="{0} {1}".format(api_settings.JWT_AUTH_HEADER_PREFIX, super_user_token))
+        client = APIClient(HTTP_AUTHORIZATION="{0} {1}".format(JWT_AUTH_HEADER_PREFIX, super_user_token))
 
         # Can create (active) user
         res = client.post('/api/admin/users/', {'username': 'testuser999', 'email': 'testuser999@test.com', 'password': 'test999', 'is_active': True})
@@ -91,7 +91,7 @@ class TestApiAdmin(BootTestCase):
         })
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         user_token = res.data['token']
-        client = APIClient(HTTP_AUTHORIZATION="{0} {1}".format(api_settings.JWT_AUTH_HEADER_PREFIX, user_token))
+        client = APIClient(HTTP_AUTHORIZATION="{0} {1}".format(JWT_AUTH_HEADER_PREFIX, user_token))
 
         # Can't create user
         res = client.post('/api/admin/users/', {'username': 'testuser999', 'email': 'testuser999@test.com', 'password': 'test999', 'is_active': True})
@@ -129,7 +129,7 @@ class TestApiAdmin(BootTestCase):
         })
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         super_user_token = res.data['token']
-        client = APIClient(HTTP_AUTHORIZATION="{0} {1}".format(api_settings.JWT_AUTH_HEADER_PREFIX, super_user_token))
+        client = APIClient(HTTP_AUTHORIZATION="{0} {1}".format(JWT_AUTH_HEADER_PREFIX, super_user_token))
 
         # Can create group
         res = client.post('/api/admin/groups/', {'name': 'Test', 'permissions': [53, 54]})
@@ -183,7 +183,7 @@ class TestApiAdmin(BootTestCase):
         })
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         user_token = res.data['token']
-        client = APIClient(HTTP_AUTHORIZATION="{0} {1}".format(api_settings.JWT_AUTH_HEADER_PREFIX, user_token))
+        client = APIClient(HTTP_AUTHORIZATION="{0} {1}".format(JWT_AUTH_HEADER_PREFIX, user_token))
 
         # Can't create group
         res = client.post('/api/admin/groups/', {'name': 'Test', 'permissions': [53, 54]})
@@ -287,7 +287,7 @@ class TestApiAdmin(BootTestCase):
         })
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertNotEqual(token, res.data['token'])
-        self.assertEqual(jwt.decode(res.data['token'], None, False).get('username'), 'testuser')
+        self.assertEqual(jwt.decode(res.data['token'], options={'verify_signature': False}).get('username'), 'testuser')
 
     def test_impersonation(self):
         client = APIClient()
@@ -339,7 +339,7 @@ class TestApiAdmin(BootTestCase):
         
         # Use impersonated token to access projects
         # Projects should be filtered by impersonated user
-        impersonated_client = APIClient(HTTP_AUTHORIZATION="{0} {1}".format(api_settings.JWT_AUTH_HEADER_PREFIX, impersonated_token))
+        impersonated_client = APIClient(HTTP_AUTHORIZATION="{0} {1}".format(JWT_AUTH_HEADER_PREFIX, impersonated_token))
         
         res = impersonated_client.get('/api/projects/')
         self.assertEqual(res.status_code, status.HTTP_200_OK)

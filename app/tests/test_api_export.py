@@ -229,7 +229,7 @@ class TestApiTask(BootTransactionTestCase):
                             
                             res = client.get("/api/workers/get/{}?filename={}".format(celery_task_id, reply["filename"]))
                             self.assertEqual(res.status_code, status.HTTP_200_OK)
-                            self.assertEqual(res._headers['content-disposition'][1], 'attachment; filename={}'.format(reply["filename"]))
+                            self.assertEqual(res.headers['content-disposition'], 'attachment; filename={}'.format(reply["filename"]))
                     else:
                         self.assertTrue(len(reply[0]) > 0) # Error message
 

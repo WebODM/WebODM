@@ -1,4 +1,4 @@
-from django.contrib.gis.geos import GEOSGeometry
+from app.geoutils import bbox_to_polygon
 
 from .classes import BootTestCase
 from app.models import Task, Project
@@ -11,8 +11,8 @@ class TestApi(BootTestCase):
         pass
 
     def test_db(self):
-        # Make sure we can use PostGIS geometry type
         task = Task.objects.create(project=Project.objects.latest("created_at"),
-                                   orthophoto_extent=GEOSGeometry("POINT(1 2)"))
+                                   orthophoto_extent=bbox_to_polygon([1, 2, 3, 4]))
         task.refresh_from_db()
-        self.assertTrue(task.orthophoto_extent is not None)
+        self.assertEqual(task.orthophoto_extent['type'], 'Polygon')
+        self.assertEqual(task.get_extent(), (1, 2, 3, 4))

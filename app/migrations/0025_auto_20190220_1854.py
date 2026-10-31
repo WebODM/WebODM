@@ -3,7 +3,7 @@
 import app.models.task
 import colorfield.fields
 import django.contrib.postgres.fields
-import django.contrib.postgres.fields.jsonb
+import django.db.models
 from django.db import migrations, models
 
 
@@ -23,7 +23,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='preset',
             name='options',
-            field=django.contrib.postgres.fields.jsonb.JSONField(blank=True, default=list,
+            field=django.db.models.JSONField(blank=True, default=list,
                                                                  help_text="Options that define this preset (same format as in a Task's options).",
                                                                  validators=[app.models.task.validate_task_options]),
         ),
@@ -38,7 +38,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='task',
             name='options',
-            field=django.contrib.postgres.fields.jsonb.JSONField(blank=True, default=dict,
+            field=django.db.models.JSONField(blank=True, default=dict,
                                                                  help_text='Options that are being used to process this task',
                                                                  validators=[app.models.task.validate_task_options]),
         ),

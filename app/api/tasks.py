@@ -19,7 +19,6 @@ from django.db import transaction
 from django.http import FileResponse
 from django.http import HttpResponse
 from django.http import StreamingHttpResponse
-from django.contrib.gis.geos import Polygon
 from zipstream.ng import ZipStream
 from rest_framework import status, serializers, viewsets, filters, exceptions, permissions, parsers
 from rest_framework.decorators import action
@@ -37,7 +36,7 @@ from .tags import TagsField
 from app.security import path_traversal_check
 from django.utils.translation import gettext_lazy as _
 from .fields import PolygonGeometryField
-from app.geoutils import geom_transform_wkt_bbox, get_srs_name_units_from_epsg_or_wkt, get_rtc_offset
+from app.geoutils import geom_transform_wkt_bbox, get_srs_name_units_from_epsg_or_wkt, get_rtc_offset, polygon_bbox, bbox_intersects
 from webodm import settings
 
 def flatten_files(request_files):
@@ -244,17 +243,17 @@ class TaskViewSet(viewsets.ViewSet):
         bbox = request.query_params.get('bbox')
         if bbox is not None:
             try:
-                xmin, ymin, xmax, ymax = [float(v) for v in bbox.split(",")]
+                bbox = [float(v) for v in bbox.split(",")]
+                if len(bbox) != 4:
+                    raise ValueError()
             except:
                 raise exceptions.ValidationError("Invalid bbox parameter")   
 
-            geom = Polygon.from_bbox((xmin, ymin, xmax, ymax))
-            query &= Q(orthophoto_extent__intersects=geom) | \
-                     Q(dsm_extent__intersects=geom) | \
-                     Q(dtm_extent__intersects=geom)
-
         tasks = self.queryset.filter(query)
         tasks = filters.OrderingFilter().filter_queryset(self.request, tasks, self)
+
+        if bbox is not None:
+            tasks = [t for t in tasks if any(e is not None and bbox_intersects(bbox, polygon_bbox(e)) for e in (t.orthophoto_extent, t.dsm_extent, t.dtm_extent))]
         serializer = TaskSerializer(tasks, many=True)
         return Response(serializer.data)
 

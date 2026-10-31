@@ -7,15 +7,14 @@ import numpy as np
 import numexpr as ne
 import json
 import time
-from django.contrib.gis.geos import GEOSGeometry
 from rasterio.enums import ColorInterp
 from rasterio.windows import Window
-from rio_tiler.utils import has_alpha_band, linear_rescale
-from rio_tiler.colormap import cmap as colormap, apply_cmap
-from rio_tiler.errors import InvalidColorMapName
+from app.vendor.rio_tiler.utils import has_alpha_band, linear_rescale
+from app.vendor.rio_tiler.colormap import cmap as colormap, apply_cmap
+from app.vendor.rio_tiler.errors import InvalidColorMapName
 from app.api.hsvblend import hsv_blend
 from app.api.hillshade import LightSource
-from rio_tiler.io import COGReader
+from app.vendor.rio_tiler.io import COGReader
 from webodm import settings
 
 logger = logging.getLogger('app.logger')
@@ -115,7 +114,7 @@ def export_raster(input, output, progress_callback=None, **opts):
     hillshade = opts.get('hillshade')
     asset_type = opts.get('asset_type')
     name = opts.get('name', 'raster') # KMZ specific
-    crop_wkt = opts.get('crop')
+    crop = opts.get('crop')
 
     dem = asset_type in ['dsm', 'dtm']
     path_base, _ = os.path.splitext(output)
@@ -123,15 +122,13 @@ def export_raster(input, output, progress_callback=None, **opts):
     if dem:
         resampling = 'bilinear'
 
-    if crop_wkt is not None:
-        crop = GEOSGeometry(crop_wkt)
-
+    if crop is not None:
         crop_geojson = os.path.join(path_base, "crop.geojson")
         raster_vrt = os.path.join(path_base, "raster.vrt")
 
         os.makedirs(os.path.dirname(crop_geojson), exist_ok=True)
         with open(crop_geojson, "w", encoding="utf-8") as f:
-            f.write(crop.geojson)
+            f.write(json.dumps(crop))
 
         subprocess.check_output(["gdalwarp", "-cutline", crop_geojson,
                 '--config', 'GDALWARP_DENSIFY_CUTLINE', 'NO', 

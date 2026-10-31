@@ -1,18 +1,19 @@
 # syntax=docker/dockerfile:1
-FROM ubuntu:22.04 AS common
+FROM ubuntu:24.04 AS common
 LABEL maintainer="Piero Toffanin <pt@masseranolabs.com>"
 
 # Build-time variables
 ARG DEBIAN_FRONTEND=noninteractive
 ARG NODE_MAJOR=20
-ARG PYTHON_VERSION=3.9
-ARG RELEASE_CODENAME=jammy
+ARG PYTHON_VERSION=3.14
+ARG RELEASE_CODENAME=noble
 ARG WORKDIR=/webodm
 
 # Run-time variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=$WORKDIR
 ENV PROJ_LIB=/usr/share/proj
+ENV NPM_CONFIG_AUDIT=false NPM_CONFIG_FUND=false NPM_CONFIG_UPDATE_NOTIFIER=false NPM_CONFIG_LOGLEVEL=error
 
 #### Common setup ####
 
@@ -41,10 +42,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     <<EOT
     # Build-time dependencies
     apt-get -qq update
-    apt-get install -y --no-install-recommends curl ca-certificates gnupg cmake g++ libpdal-dev
-    # Python 3.9 support
+    apt-get install -y --no-install-recommends curl ca-certificates gnupg cmake g++
     curl -fsSL 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xf23c5a6cf475977595c89f51ba6932366a755776' | gpg --dearmor -o /etc/apt/trusted.gpg.d/deadsnakes.gpg
     echo "deb http://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu $RELEASE_CODENAME main" > /etc/apt/sources.list.d/deadsnakes.list
+    curl -fsSL 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x6b827c12c2d425e227edca75089ebe08314df160' | gpg --dearmor -o /etc/apt/trusted.gpg.d/ubuntugis.gpg
+    echo "deb http://ppa.launchpadcontent.net/ubuntugis/ubuntugis-unstable/ubuntu $RELEASE_CODENAME main" > /etc/apt/sources.list.d/ubuntugis.list
     # Node.js deb source
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/nodesource.gpg
     echo "deb https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" > /etc/apt/sources.list.d/nodesource.list
@@ -56,16 +58,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update
     # Install common deps, starting with NodeJS
     apt-get -qq install -y nodejs
-    # Python3.9, GDAL, PDAL, nginx, letsencrypt, psql
+    # Python, GDAL, PDAL, nginx, letsencrypt, psql
     apt-get install -y --no-install-recommends \
-        python$PYTHON_VERSION python$PYTHON_VERSION-venv python$PYTHON_VERSION-distutils python$PYTHON_VERSION-dev libpq-dev build-essential git libproj-dev gdal-bin pdal \
+        python$PYTHON_VERSION python$PYTHON_VERSION-venv python$PYTHON_VERSION-dev build-essential git libproj-dev proj-bin gdal-bin pdal libpdal-dev \
         libgdal-dev nginx certbot gettext-base cron postgresql-client gettext tzdata
     # Create virtualenv
     python$PYTHON_VERSION -m venv $WORKDIR/venv
     # Build entwine
     mkdir /staging && cd /staging
-    git clone -b 290 https://github.com/WebODM/entwine && cd entwine
-    mkdir build && cd build && cmake .. -DWITH_TESTS=OFF -DWITH_ZSTD=OFF -DCMAKE_INSTALL_PREFIX=/staging/entwine/build/install && make -j6 && make install
+    git clone -b webodm https://github.com/WebODM/entwine && cd entwine
+    mkdir build && cd build
+    cmake .. -DWITH_TESTS=OFF -DWITH_ZSTD=OFF -DCMAKE_INSTALL_PREFIX=/staging/entwine/build/install
+    make -j6
+    make install
     cd /webodm
 EOT
 
@@ -76,19 +81,23 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     <<EOT
     # Install Python dependencies
     # Install pip
-    pip install -U pip==26.0.1 setuptools==67.0.0 wheel==0.46.3 cython==3.2.4
-    pip install numpy==1.26.2
+    pip install -U pip==26.0.1 setuptools==80.9.0 wheel==0.46.3
     # Install Python requirements, including correct Python GDAL bindings.
-    pip install -r requirements.txt "boto3==1.14.14" gdal[numpy]=="$(gdal-config --version).*" --no-build-isolation
+    # rasterio and pyproj are compiled against the system GDAL/PROJ
+    pip install -r requirements.txt --no-binary rasterio,pyproj
+    pip install gdal[numpy]=="$(gdal-config --version).*" --no-build-isolation
+    # Cleanup build
+    find $WORKDIR/venv/lib -type f \( -name '*.pyx' -o -name '*.pxd' -o -name '*.pxi' -o -name '*.c' -o -name '*.cpp' \) -delete
+    rm -rf /tmp/* /var/tmp/*
 EOT
 
 # Install project Node dependencies
 COPY package.json ./
 RUN --mount=type=cache,target=/root/.npm \
     <<EOT
-    npm install --quiet
+    npm install
     # Install webpack, webpack CLI
-    npm install --quiet -g webpack@5.89.0 webpack-cli@5.1.4
+    npm install -g webpack@5.89.0 webpack-cli@5.1.4
 EOT
 
 # Copy remaining files
@@ -132,9 +141,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     # Run-time dependencies
     apt-get -qq update
     apt-get install -y --no-install-recommends curl ca-certificates gnupg
-    # Legacy Python support
     curl -fsSL 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xf23c5a6cf475977595c89f51ba6932366a755776' | gpg --dearmor -o /etc/apt/trusted.gpg.d/deadsnakes.gpg
     echo "deb http://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu $RELEASE_CODENAME main" > /etc/apt/sources.list.d/deadsnakes.list
+    curl -fsSL 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x6b827c12c2d425e227edca75089ebe08314df160' | gpg --dearmor -o /etc/apt/trusted.gpg.d/ubuntugis.gpg
+    echo "deb http://ppa.launchpadcontent.net/ubuntugis/ubuntugis-unstable/ubuntu $RELEASE_CODENAME main" > /etc/apt/sources.list.d/ubuntugis.list
     # Node.js deb source
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/nodesource.gpg
     echo "deb https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" > /etc/apt/sources.list.d/nodesource.list
@@ -148,10 +158,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get -qq install -y nodejs
     # Python, GDAL, PDAL, nginx, letsencrypt, psql, git, exiftool
     apt-get install -y --no-install-recommends \
-        python$PYTHON_VERSION python$PYTHON_VERSION-distutils gdal-bin pdal \
+        python$PYTHON_VERSION gdal-bin pdal \
         nginx certbot logrotate gettext-base cron postgresql-client gettext tzdata git exiftool
     # Install webpack, webpack CLI
-    npm install --quiet -g webpack@5.89.0 webpack-cli@5.1.4
+    npm install -g webpack@5.89.0 webpack-cli@5.1.4
     # Install splat-tools
     curl -fsSL "https://github.com/uav4geo/Splat-Tools/releases/download/v1.0.3/splat-tools-1.0.3-$(uname -m)-linux.tar.gz" | tar -xz -C /usr/bin --strip-components=1 "splat-tools-1.0.3-$(uname -m)-linux/splat-tools" && /usr/bin/splat-tools --version
     # Cleanup of build requirements

@@ -47,10 +47,11 @@ class Command(BaseCommand):
             call_command('makemessages_djangojs', '--keep-pot', *locale_params, '-d=djangojs', '--extension=jsx', '--extension=js', '--ignore=build', '--ignore=app/static/app/js/vendor', '--ignore=app/static/app/bundles', '--ignore=node_modules', '--ignore=venv/*', '--ignore=slate/*', '--ignore=nodeodm/*', '--language=Python')
 
         elif options.get('action') == 'build':
+            ignore = ['--ignore=build', '--ignore=node_modules', '--ignore=venv', '--ignore=slate', '--ignore=nodeodm', '--ignore=app/media*']
             if options.get('safe'):
                 for l in locales:
                     print("Building %s .po files into .mo" % l)
-                    call_command('compilemessages', '--locale=%s' % l)
+                    call_command('compilemessages', '--locale=%s' % l, *ignore)
             else:
                 print("Building .po files into .mo")
-                call_command('compilemessages')
+                call_command('compilemessages', *ignore)

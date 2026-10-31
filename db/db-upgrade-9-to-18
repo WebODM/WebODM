@@ -1,0 +1,223 @@
+#!/usr/bin/env bash
+# Upgrades a PostgreSQL 9.5 + PostGIS database volume to the current PostgreSQL version.
+# Usage: db-upgrade-9-to-18 [--check]
+#   --check: exit 0 if no upgrade is needed, 3 if an upgrade is needed, 1 on error
+# No other PostgreSQL server must be running on the data volume while this runs.
+set -Eeo pipefail
+
+VOLUME_DIR=/var/lib/postgresql/data
+NEW_MAJOR="${PG_MAJOR:-18}"
+OLD_BIN=/usr/local/pgsql-9.5/bin
+NEW_BIN=/usr/local/pgsql/bin
+NEW_DIR="$VOLUME_DIR/$NEW_MAJOR"
+TMP_DIR="$VOLUME_DIR/$NEW_MAJOR.tmp"
+BACKUP_DIR="$VOLUME_DIR/backup-9.5"
+LOG="$VOLUME_DIR/upgrade.log"
+OLD_SOCK=/var/run/postgresql/upgrade-old
+NEW_SOCK=/var/run/postgresql/upgrade-new
+OLD_PORT=5432
+NEW_PORT=5433
+
+log() {
+	echo "[db-upgrade-9-to-18] $*"
+}
+
+if [ -s "$NEW_DIR/PG_VERSION" ]; then
+	log "Database is already at PostgreSQL $(cat "$NEW_DIR/PG_VERSION"), nothing to do"
+	exit 0
+fi
+
+if [ ! -s "$VOLUME_DIR/PG_VERSION" ]; then
+	log "No existing database found, nothing to upgrade"
+	exit 0
+fi
+
+OLD_VERSION=$(cat "$VOLUME_DIR/PG_VERSION")
+if [ "$OLD_VERSION" != "9.5" ]; then
+	log "Found a PostgreSQL $OLD_VERSION database, but only upgrades from 9.5 are supported"
+	exit 1
+fi
+
+if [ "$1" = "--check" ]; then
+	log "PostgreSQL $OLD_VERSION database found, upgrade to $NEW_MAJOR required"
+	exit 3
+fi
+
+old_entries() {
+	find "$VOLUME_DIR" -mindepth 1 -maxdepth 1 \
+		! -name "$NEW_MAJOR" ! -name "$NEW_MAJOR.tmp" \
+		! -name 'backup-*' ! -name 'upgrade.log' ! -name 'lost+found' "$@"
+}
+
+old_psql() {
+	"$NEW_BIN/psql" -h "$OLD_SOCK" -p "$OLD_PORT" -U postgres --no-password -v ON_ERROR_STOP=1 "$@"
+}
+
+new_psql() {
+	"$NEW_BIN/psql" -h "$NEW_SOCK" -p "$NEW_PORT" -U postgres --no-password -v ON_ERROR_STOP=1 "$@"
+}
+
+stop_server() {
+	local bin="$1" dir="$2"
+	if [ -f "$dir/postmaster.pid" ]; then
+		"$bin/pg_ctl" -D "$dir" -m fast -w stop > /dev/null 2>&1 || :
+	fi
+}
+
+cleanup() {
+	stop_server "$OLD_BIN" "$VOLUME_DIR"
+	stop_server "$NEW_BIN" "$TMP_DIR"
+	rm -rf "$OLD_SOCK" "$NEW_SOCK"
+}
+
+on_error() {
+	cleanup
+	rm -rf "$TMP_DIR"
+	log ""
+	log "UPGRADE FAILED. The original PostgreSQL 9.5 database has not been modified."
+	log "The full log is in the database volume at upgrade.log"
+	log ""
+	log "The upgrade will be attempted again the next time the database starts."
+	log "To go back to a previous version of WebODM in the meantime:"
+	log "  1. Check out a 9.5 supported WebODM release (git checkout 5a0ec41e16d46d16d66187068b01ccdf6f31fe65)"
+	log "  2. ./webodm.sh start"
+	exit 1
+}
+
+drop_postgis() {
+	old_psql -1 -d "$1" -v db="$1" <<'EOSQL'
+DO $$
+DECLARE
+	c record;
+	i record;
+BEGIN
+	FOR c IN
+		SELECT n.nspname, t.relname, a.attname, ty.typname
+		FROM pg_attribute a
+		JOIN pg_class t ON t.oid = a.attrelid
+		JOIN pg_namespace n ON n.oid = t.relnamespace
+		JOIN pg_type ty ON ty.oid = a.atttypid
+		WHERE t.relkind = 'r' AND a.attnum > 0 AND NOT a.attisdropped
+		  AND ty.typname IN ('geometry', 'geography', 'raster')
+		  AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+	LOOP
+		FOR i IN
+			SELECT ic.relname AS idx
+			FROM pg_index x
+			JOIN pg_class ic ON ic.oid = x.indexrelid
+			JOIN pg_class tc ON tc.oid = x.indrelid
+			JOIN pg_namespace n ON n.oid = tc.relnamespace
+			JOIN pg_attribute a ON a.attrelid = x.indrelid AND a.attnum = ANY(x.indkey)
+			WHERE n.nspname = c.nspname AND tc.relname = c.relname AND a.attname = c.attname
+		LOOP
+			RAISE NOTICE 'Dropping index %.%', c.nspname, i.idx;
+			EXECUTE format('DROP INDEX %I.%I', c.nspname, i.idx);
+		END LOOP;
+
+		RAISE NOTICE 'Converting %.%.% (%)', c.nspname, c.relname, c.attname, c.typname;
+		IF c.typname = 'raster' THEN
+			EXECUTE format('ALTER TABLE %I.%I ALTER COLUMN %I TYPE text USING NULL', c.nspname, c.relname, c.attname);
+		ELSE
+			EXECUTE format('ALTER TABLE %I.%I ALTER COLUMN %I TYPE jsonb USING ST_AsGeoJSON(%I)::jsonb', c.nspname, c.relname, c.attname, c.attname);
+		END IF;
+	END LOOP;
+END
+$$;
+DROP EXTENSION postgis;
+ALTER DATABASE :"db" RESET "postgis.gdal_enabled_drivers";
+ALTER DATABASE :"db" RESET "postgis.enable_outdb_rasters";
+EOSQL
+}
+
+main() {
+	trap on_error ERR
+
+	log "Upgrading PostgreSQL $OLD_VERSION database to PostgreSQL $NEW_MAJOR"
+	log "Started $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+
+	cleanup
+	rm -rf "$TMP_DIR"
+	mkdir -p "$OLD_SOCK" "$NEW_SOCK"
+
+	old_kb=$(old_entries -print0 | xargs -0 du -sk 2>/dev/null | awk '{s+=$1} END {print s+0}')
+	avail_kb=$(df -Pk "$VOLUME_DIR" | awk 'NR==2 {print $4}')
+	if [ -s "$BACKUP_DIR/PG_VERSION" ]; then
+		need_kb=$((old_kb * 2))
+	else
+		need_kb=$((old_kb * 3))
+	fi
+	log "Database size: $((old_kb / 1024)) MB, free space: $((avail_kb / 1024)) MB, required: $((need_kb / 1024)) MB"
+	if [ "$avail_kb" -lt "$need_kb" ]; then
+		log "Not enough free space on the database volume"
+		false
+	fi
+
+	if [ -s "$BACKUP_DIR/PG_VERSION" ]; then
+		log "Backup of the 9.5 database already exists in backup-9.5, reusing it"
+	else
+		log "Copying the 9.5 database to backup-9.5"
+		rm -rf "$BACKUP_DIR.tmp"
+		mkdir -m 700 "$BACKUP_DIR.tmp"
+		old_entries -print0 | xargs -0 cp -a -t "$BACKUP_DIR.tmp"
+		rm -f "$BACKUP_DIR.tmp/postmaster.pid"
+		mv "$BACKUP_DIR.tmp" "$BACKUP_DIR"
+	fi
+
+	log "Starting PostgreSQL $OLD_VERSION"
+	rm -f "$VOLUME_DIR/postmaster.pid"
+	"$OLD_BIN/pg_ctl" -D "$VOLUME_DIR" -w -t 600 \
+		-o "-c listen_addresses='' -c unix_socket_directories='$OLD_SOCK' -p $OLD_PORT" start
+
+	dbs=$(old_psql -At -d postgres -c "SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname")
+
+	for db in $dbs; do
+		has_postgis=$(old_psql -At -d "$db" -c "SELECT 1 FROM pg_extension WHERE extname = 'postgis'")
+		if [ "$has_postgis" = "1" ]; then
+			log "Converting PostGIS geometries to GeoJSON in database $db"
+			drop_postgis "$db"
+		fi
+	done
+
+	log "Initializing PostgreSQL $NEW_MAJOR cluster"
+	mkdir -m 700 "$TMP_DIR"
+	"$NEW_BIN/initdb" -D "$TMP_DIR" --username=postgres --pwfile=<(echo "$POSTGRES_PASSWORD") --encoding=UTF8 --locale=en_US.UTF-8 > /dev/null
+	echo "host all all $POSTGRES_ALLOW_HOST $POSTGRES_HOST_AUTH_METHOD" >> "$TMP_DIR/pg_hba.conf"
+	"$NEW_BIN/pg_ctl" -D "$TMP_DIR" -w \
+		-o "-c listen_addresses='' -c unix_socket_directories='$NEW_SOCK' -p $NEW_PORT" start > /dev/null
+
+	log "Transferring roles"
+	"$NEW_BIN/pg_dumpall" -h "$OLD_SOCK" -p "$OLD_PORT" -U postgres --no-password --globals-only \
+		| sed '/^CREATE ROLE postgres;$/d' \
+		| new_psql -q -d postgres > /dev/null
+
+	for db in $dbs; do
+		log "Transferring database $db"
+		if [ "$db" = "postgres" ]; then
+			"$NEW_BIN/pg_dump" -h "$OLD_SOCK" -p "$OLD_PORT" -U postgres --no-password "$db" \
+				| new_psql -q -d postgres > /dev/null
+		else
+			"$NEW_BIN/pg_dump" -h "$OLD_SOCK" -p "$OLD_PORT" -U postgres --no-password --create "$db" \
+				| new_psql -q -d postgres > /dev/null
+		fi
+	done
+
+	log "Analyzing"
+	"$NEW_BIN/vacuumdb" -h "$NEW_SOCK" -p "$NEW_PORT" -U postgres --no-password --all --analyze-only -q
+
+	log "Stopping servers"
+	cleanup
+
+	log "Committing"
+	mv "$TMP_DIR" "$NEW_DIR"
+	old_entries -exec rm -rf {} +
+
+	log "Upgrade complete. The old 9.5 database is kept in backup-9.5 and can be deleted once you are satisfied with the upgrade."
+	log "Finished $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+}
+
+if [ "$(id -u)" = '0' ]; then
+	exec gosu postgres "$BASH_SOURCE" "$@"
+fi
+
+main 2>&1 | tee -a "$LOG"
+exit "${PIPESTATUS[0]}"

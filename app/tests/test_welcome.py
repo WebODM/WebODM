@@ -32,7 +32,7 @@ class TestWelcome(BootTestCase):
         res = c.post('/welcome/', data={
             'username': 'testadminuser',
             'password': ''}, follow=True)
-        self.assertFormError(res, 'firstuserform', 'password', 'This field is required.')
+        self.assertFormError(res.context['firstuserform'], 'password', 'This field is required.')
         self.assertTrue(User.objects.count() == 0, 'No users were created')
 
         # User can create admin user

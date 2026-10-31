@@ -12,7 +12,6 @@ def detect(orthophoto, model, classes=None, crop=None, progress_callback=None):
     import shutil
     import tempfile
     from webodm import settings
-    from django.contrib.gis.geos import GEOSGeometry
 
     try:
         from geodeep import detect as gdetect, models
@@ -33,7 +32,7 @@ def detect(orthophoto, model, classes=None, crop=None, progress_callback=None):
             crop_geojson = os.path.join(tmpdir, "crop.geojson")
             ortho_vrt = os.path.join(tmpdir, "orthophoto.vrt")
             with open(crop_geojson, "w", encoding="utf-8") as f:
-                f.write(GEOSGeometry(crop).geojson)
+                f.write(json.dumps(crop))
             p = subprocess.Popen([gdalwarp_bin, "-cutline", crop_geojson,
                     '--config', 'GDALWARP_DENSIFY_CUTLINE', 'NO', 
                     '-crop_to_cutline', '-of', 'VRT',
@@ -73,7 +72,7 @@ class TaskObjDetect(TaskView):
             return Response({'error': 'Invalid model'}, status=status.HTTP_200_OK)
 
         model_id, classes = model_map[model]
-        celery_task_id = run_function_async(detect, orthophoto, model_id, classes, task.crop.wkt if task.crop is not None else None, with_progress=True).task_id
+        celery_task_id = run_function_async(detect, orthophoto, model_id, classes, task.crop, with_progress=True).task_id
 
         return Response({'celery_task_id': celery_task_id}, status=status.HTTP_200_OK)
 

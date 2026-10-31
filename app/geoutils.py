@@ -36,20 +36,140 @@ def get_rtc_offset(task):
 
     return [0, 0]
 
-# GEOS has some weird bug where
-# we can't simply call geom.tranform(srid)
-# so we write our own
+
+def polygon_ring(geom):
+    if not isinstance(geom, dict) or geom.get('type') != 'Polygon':
+        return None
+    coords = geom.get('coordinates')
+    if not isinstance(coords, list) or len(coords) == 0:
+        return None
+    ring = coords[0]
+    if not isinstance(ring, list) or len(ring) < 4:
+        return None
+    try:
+        return [[float(p[0]), float(p[1])] for p in ring]
+    except (TypeError, ValueError, IndexError):
+        return None
+
+def polygon_from_ring(ring):
+    if len(ring) > 0 and ring[0] != ring[-1]:
+        ring = ring + [ring[0]]
+    return {'type': 'Polygon', 'coordinates': [ring]}
+
+def segments_intersect(a, b, c, d):
+    def orient(p, q, r):
+        v = (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+        return (v > 0) - (v < 0)
+    o1 = orient(a, b, c)
+    o2 = orient(a, b, d)
+    o3 = orient(c, d, a)
+    o4 = orient(c, d, b)
+    return o1 != o2 and o3 != o4
+
+def polygon_valid(geom):
+    ring = polygon_ring(geom)
+    if ring is None:
+        return False
+    if ring[0] != ring[-1]:
+        return False
+    for x, y in ring:
+        if not math.isfinite(x) or not math.isfinite(y):
+            return False
+    if polygon_area(geom) <= 0:
+        return False
+
+    edges = [(ring[i], ring[i + 1]) for i in range(len(ring) - 1)]
+    n = len(edges)
+    for i in range(n):
+        for j in range(i + 2, n):
+            if i == 0 and j == n - 1:
+                continue
+            if segments_intersect(edges[i][0], edges[i][1], edges[j][0], edges[j][1]):
+                return False
+    return True
+
+def polygon_area(geom):
+    ring = polygon_ring(geom)
+    if ring is None:
+        return 0.0
+    area = 0.0
+    n = len(ring)
+    for i in range(n):
+        x1, y1 = ring[i]
+        x2, y2 = ring[(i + 1) % n]
+        area += x1 * y2 - x2 * y1
+    return abs(area) / 2.0
+
+def polygon_bbox(geom):
+    ring = polygon_ring(geom)
+    if ring is None:
+        return None
+    xs = [p[0] for p in ring]
+    ys = [p[1] for p in ring]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+def bbox_intersects(a, b):
+    return a[0] <= b[2] and a[2] >= b[0] and a[1] <= b[3] and a[3] >= b[1]
+
+def bbox_to_polygon(bbox):
+    w, s, e, n = bbox
+    return polygon_from_ring([[w, s], [w, n], [e, n], [e, s], [w, s]])
+
+def polygon_clip_bbox(geom, bbox):
+    ring = polygon_ring(geom)
+    if ring is None:
+        return None
+    if ring[0] == ring[-1]:
+        ring = ring[:-1]
+
+    minx, miny, maxx, maxy = bbox
+    edges = [
+        (lambda p: p[0] >= minx, lambda a, b: [minx, a[1] + (b[1] - a[1]) * (minx - a[0]) / (b[0] - a[0])]),
+        (lambda p: p[0] <= maxx, lambda a, b: [maxx, a[1] + (b[1] - a[1]) * (maxx - a[0]) / (b[0] - a[0])]),
+        (lambda p: p[1] >= miny, lambda a, b: [a[0] + (b[0] - a[0]) * (miny - a[1]) / (b[1] - a[1]), miny]),
+        (lambda p: p[1] <= maxy, lambda a, b: [a[0] + (b[0] - a[0]) * (maxy - a[1]) / (b[1] - a[1]), maxy]),
+    ]
+
+    for inside, intersect in edges:
+        if len(ring) == 0:
+            return None
+        out = []
+        prev = ring[-1]
+        for cur in ring:
+            if inside(cur):
+                if not inside(prev):
+                    out.append(intersect(prev, cur))
+                out.append(cur)
+            elif inside(prev):
+                out.append(intersect(prev, cur))
+            prev = cur
+        ring = out
+
+    if len(ring) < 3:
+        return None
+
+    poly = polygon_from_ring(ring)
+    if polygon_area(poly) <= 0:
+        return None
+    return poly
+
+def polygon_to_wkt(geom):
+    ring = polygon_ring(geom)
+    if ring is None:
+        return None
+    return "POLYGON ((%s))" % ", ".join("%s %s" % (x, y) for x, y in ring)
 
 def geom_transform_wkt_bbox(geom, dataset, bbox_crs="geographic", wkt_crs="raster"):
     """
-    :param geom GEOSGeometry
+    :param geom GeoJSON Polygon dict (EPSG:4326)
     :param dataset rasterio dataset | path to raster
     :param bbox_crs CRS of bbox (geographic --> lat/lon | projected --> north/east | raster --> pixels)
     :param wkt_crs CRS of WKT (raster --> pixels | projected --> north/east)
     :return (WKT, bbox)
     """
-    if not geom.srid:
-        raise ValueError("Geometry must have an SRID")
+    ring = polygon_ring(geom)
+    if ring is None:
+        raise ValueError("Geometry must be a polygon")
     
     close_ds = False
     if isinstance(dataset, str):
@@ -60,65 +180,58 @@ def geom_transform_wkt_bbox(geom, dataset, bbox_crs="geographic", wkt_crs="raste
         if not dataset.crs:
             raise ValueError("Dataset must have a CRS")
 
-        coords = geom.tuple
-        if len(coords) == 1:
-            xs, ys = zip(*coords[0])
-            tx, ty = rasterio.warp.transform(CRS.from_epsg(geom.srid), dataset.crs, xs, ys)
-            raster_coords = [dataset.index(x, y, op=np.round) for x, y in zip(tx, ty)]
+        xs, ys = zip(*ring)
+        tx, ty = rasterio.warp.transform(CRS.from_epsg(4326), dataset.crs, xs, ys)
+        raster_coords = [dataset.index(x, y, op=np.round) for x, y in zip(tx, ty)]
 
-            if bbox_crs == 'geographic':
-                minx = min(xs)
-                maxx = max(xs)
-                miny = min(ys)
-                maxy = max(ys)
-            elif bbox_crs == 'projected':
-                minx = min(tx)
-                maxx = max(tx)
-                miny = min(ty)
-                maxy = max(ty)
-            elif bbox_crs == 'raster':
-                coords = np.array(raster_coords)
-                px = coords[:, 1]
-                py = coords[:, 0]
-                minx = px.min()
-                maxx = px.max()
-                miny = py.min()
-                maxy = py.max()
-            else:
-                raise ValueError("Invalid bbox_crs")
-
-            if wkt_crs == "raster":
-                out = ", ".join(f"{x} {y}" for y, x in raster_coords)
-            elif wkt_crs == "projected":
-                out = ", ".join(f"{x} {y}" for x, y in zip(tx, ty))
-            else:
-                raise ValueError("Invalid wkt_crs")
-            
-            wkt = f"POLYGON (({out}))"
-            return wkt, (minx, miny, maxx, maxy)
+        if bbox_crs == 'geographic':
+            minx = min(xs)
+            maxx = max(xs)
+            miny = min(ys)
+            maxy = max(ys)
+        elif bbox_crs == 'projected':
+            minx = min(tx)
+            maxx = max(tx)
+            miny = min(ty)
+            maxy = max(ty)
+        elif bbox_crs == 'raster':
+            coords = np.array(raster_coords)
+            px = coords[:, 1]
+            py = coords[:, 0]
+            minx = px.min()
+            maxx = px.max()
+            miny = py.min()
+            maxy = py.max()
         else:
-            raise ValueError("Cannot transform complex geometries to WKT")
+            raise ValueError("Invalid bbox_crs")
+
+        if wkt_crs == "raster":
+            out = ", ".join(f"{x} {y}" for y, x in raster_coords)
+        elif wkt_crs == "projected":
+            out = ", ".join(f"{x} {y}" for x, y in zip(tx, ty))
+        else:
+            raise ValueError("Invalid wkt_crs")
+        
+        wkt = f"POLYGON (({out}))"
+        return wkt, (minx, miny, maxx, maxy)
     finally:
         if close_ds:
             dataset.close()
 
 def geom_transform(geom, target_srs):
-    if not geom.srid:
-        raise ValueError("Geometry must have an SRID")
-    
-    coords = geom.tuple
-    if len(coords) == 1:
-        xs, ys = zip(*coords[0])
+    ring = polygon_ring(geom)
+    if ring is None:
+        raise ValueError("Geometry must be a polygon")
 
-        if isinstance(target_srs, int):
-            srs = CRS.from_epsg(target_srs)
-        elif isinstance(target_srs, str):
-            srs = CRS.from_wkt(target_srs)
+    xs, ys = zip(*ring)
 
-        tx, ty = rasterio.warp.transform(CRS.from_epsg(geom.srid), srs, xs, ys)
-        return list(zip(tx, ty))
-    else:
-        raise ValueError("Cannot transform complex geometries to WKT")
+    if isinstance(target_srs, int):
+        srs = CRS.from_epsg(target_srs)
+    elif isinstance(target_srs, str):
+        srs = CRS.from_wkt(target_srs)
+
+    tx, ty = rasterio.warp.transform(CRS.from_epsg(4326), srs, xs, ys)
+    return list(zip(tx, ty))
 
 
 def epsg_from_wkt(wkt):
@@ -140,7 +253,7 @@ def epsg_from_wkt(wkt):
         return epsg
 
 
-def get_raster_bounds_wkt(raster_path, target_srs="EPSG:4326"):
+def get_raster_bounds_geojson(raster_path, target_srs="EPSG:4326"):
     with rasterio.open(raster_path) as src:
         if src.crs is None:
             return None
@@ -152,8 +265,7 @@ def get_raster_bounds_wkt(raster_path, target_srs="EPSG:4326"):
             left, bottom, right, top
         )
 
-        wkt = f"POLYGON(({w} {s}, {w} {n}, {e} {n}, {e} {s}, {w} {s}))"
-        return wkt
+        return bbox_to_polygon((w, s, e, n))
 
 @lru_cache(maxsize=1000)
 def get_srs_name_units_from_epsg_or_wkt(epsg, wkt):

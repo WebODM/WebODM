@@ -3,7 +3,7 @@
 from __future__ import unicode_literals
 
 import app.models.task
-import django.contrib.postgres.fields.jsonb
+import django.db.models
 from django.db import migrations
 
 
@@ -17,6 +17,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='preset',
             name='options',
-            field=django.contrib.postgres.fields.jsonb.JSONField(blank=True, default=[], help_text="Options that define this preset (same format as in a Task's options).", validators=[app.models.task.validate_task_options]),
+            field=django.db.models.JSONField(blank=True, default=[], help_text="Options that define this preset (same format as in a Task's options).", validators=[app.models.task.validate_task_options]),
         ),
     ]

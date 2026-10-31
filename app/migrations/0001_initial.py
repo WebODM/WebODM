@@ -4,7 +4,7 @@ from __future__ import unicode_literals
 
 import app.models
 from django.conf import settings
-import django.contrib.postgres.fields.jsonb
+import django.db.models
 from django.db import migrations, models
 import django.db.models.deletion
 import django.utils.timezone
@@ -73,10 +73,10 @@ class Migration(migrations.Migration):
                 ('processing_time', models.IntegerField(default=-1, help_text='Number of milliseconds that elapsed since the beginning of this task (-1 indicates that no information is available)')),
                 ('status', models.IntegerField(blank=True, choices=[(10, 'QUEUED'), (20, 'RUNNING'), (30, 'FAILED'), (40, 'COMPLETED'), (50, 'CANCELED')], db_index=True, help_text='Current status of the task', null=True)),
                 ('last_error', models.TextField(blank=True, help_text='The last processing error received', null=True)),
-                ('options', django.contrib.postgres.fields.jsonb.JSONField(blank=True, default={}, help_text='Options that are being used to process this task', validators=[app.models.validate_task_options])),
+                ('options', django.db.models.JSONField(blank=True, default={}, help_text='Options that are being used to process this task', validators=[app.models.validate_task_options])),
                 ('console_output', models.TextField(blank=True, default='', help_text="Console output of the ODM's process")),
                 ('ground_control_points', models.FileField(blank=True, help_text='Optional Ground Control Points file to use for processing', null=True, upload_to=app.models.gcp_directory_path)),
-                ('orthophoto', django.contrib.gis.db.models.RasterField(blank=True, help_text='Orthophoto created by ODM', null=True, srid=4326)),
+                ('orthophoto', django.db.models.JSONField(blank=True, help_text='Orthophoto created by ODM', null=True)),
                 ('created_at', models.DateTimeField(default=django.utils.timezone.now, help_text='Creation date')),
                 ('pending_action', models.IntegerField(blank=True, choices=[(1, 'CANCEL'), (2, 'REMOVE'), (3, 'RESTART')], db_index=True, help_text='A requested action to be performed on the task. The selected action will be performed by the scheduler at the next iteration.', null=True)),
                 ('processing_node', models.ForeignKey(blank=True, help_text='Processing node assigned to this task (or null if this task has not been associated yet)', null=True, on_delete=django.db.models.deletion.CASCADE, to='nodeodm.ProcessingNode')),
