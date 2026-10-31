@@ -20,6 +20,10 @@ New contributors must disclose AI usage and how long it took them to write the c
 
 Be prepared to answer any questions about the logic from your changes. Also understand that if it takes more time to review the changes than it takes AI to generate the changes, we might reject the contribution on a principle of time efficiency.
 
+When opening a PR you must also:
+ * Personally commit the changes. No "Co-Authored-By:" tags. 
+ * Write concise, human written descriptions. We will close PRs with AI generated descriptions.
+
 ## Scope
 
 This contributing document shall apply to all WebODM projects, unless a project defines its own separate contributing document.
