@@ -1,5 +1,4 @@
 # This configuration adds the volumes necessary for SSL manual setup
-version: '2.1'
 services:
   webapp:
     volumes:

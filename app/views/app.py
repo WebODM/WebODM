@@ -12,7 +12,7 @@ from app.models import Project, Task, Basemap
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.utils.html import format_html
-from django.utils.translation import ugettext as _
+from django.utils.translation import gettext as _
 from django import forms
 from app.views.utils import get_permissions, get_project_or_raise, get_task_or_raise, handle_302, ResponseClusterRedirect, cluster_mode
 from webodm import settings

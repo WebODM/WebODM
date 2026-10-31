@@ -38,7 +38,7 @@ class ProcessingNodeFilter(FilterSet):
         fields = ['has_available_options', 'id', 'hostname', 'port', 'api_version', 'queue_count', 'max_images', 'label', 'engine', 'engine_version', ]
 
 class ProcessingNodeViewSet(viewsets.ModelViewSet):
-    filter_class = ProcessingNodeFilter
+    filterset_class = ProcessingNodeFilter
 
     pagination_class = None
     serializer_class = ProcessingNodeSerializer

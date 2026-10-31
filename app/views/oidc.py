@@ -9,8 +9,8 @@ from django.contrib.auth.models import Group
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.crypto import get_random_string
-from django.utils.http import is_safe_url
-from django.utils.translation import ugettext as _
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.translation import gettext as _
 from django.db.utils import IntegrityError
 
 from webodm import settings
@@ -35,7 +35,7 @@ def get_oidc_provider(provider_index):
 
 
 def safe_next(request, next_url):
-    if is_safe_url(url=next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+    if url_has_allowed_host_and_scheme(url=next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
         return next_url
     return settings.LOGIN_REDIRECT_URL
 

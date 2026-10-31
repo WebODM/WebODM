@@ -4,7 +4,7 @@ from __future__ import unicode_literals
 
 import app.models.task
 from django.conf import settings
-import django.contrib.postgres.fields.jsonb
+import django.db.models
 from django.db import migrations, models
 import django.db.models.deletion
 import django.utils.timezone
@@ -23,7 +23,7 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('name', models.CharField(help_text='A label used to describe the preset', max_length=255)),
-                ('options', django.contrib.postgres.fields.jsonb.JSONField(blank=True, default={}, help_text="Options that define this preset (same format as in a Task's options).", validators=[app.models.task.validate_task_options])),
+                ('options', django.db.models.JSONField(blank=True, default={}, help_text="Options that define this preset (same format as in a Task's options).", validators=[app.models.task.validate_task_options])),
                 ('created_at', models.DateTimeField(default=django.utils.timezone.now, help_text='Creation date')),
                 ('system', models.BooleanField(db_index=True, default=False, help_text='Whether this preset is available to every user in the system or just to its owner.')),
                 ('owner', models.ForeignKey(help_text='The person who owns this preset', on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),

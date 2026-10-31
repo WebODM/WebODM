@@ -1,8 +1,8 @@
 {
 	"name": "Lightning",
-	"webodmMinVersion": "3.2.5",
+	"webodmMinVersion": "4.0.0",
 	"description": "Process in the cloud with webodm.net",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"author": "Piero Toffanin",
 	"email": "pt@masseranolabs.com",
 	"repository": "https://github.com/WebODM/WebODM",

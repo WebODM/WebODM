@@ -1,16 +1,356 @@
 {% extends "app/logged_in_base.html" %}
-{% load i18n %}
+{% load i18n settings %}
 
 {% block content %}
+{% theme "header_background" as theme_header_background %}
 
-{% load i18n %}
+<style>
+#about-scene{position:fixed;top:50px;left:0;right:0;bottom:0;overflow:hidden}
+@media(min-width:768px){#about-scene{left:251px}}
+#about-scene canvas{display:block;width:100%;height:100%}
+#about-panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:480px;max-width:calc(100% - 32px);height:300px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;padding:14px 20px;border-radius:12px;background:rgba(255,255,255,0.6);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 8px 32px rgba(40,70,90,0.15);color:#2b3a42;text-align:center;overflow:hidden;transition:width .25s,height .25s,padding .25s,left .25s,top .25s,transform .25s}
+@media(max-width:767px){#about-panel{height:340px;padding:12px 10px}}
+#about-panel h2{margin:0 0 14px;color:#2b3a42;font-weight:bold;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:margin .25s,font-size .25s}
+#about-panel .about-body{max-height:300px;overflow:hidden;transition:max-height .25s,opacity .15s}
+#about-panel .about-license{font-size:90%;opacity:0.9;line-height:1.5}
+#about-min{position:absolute;top:8px;right:10px;border:0;background:none;padding:4px 8px;color:#2b3a42;opacity:0.5;cursor:pointer;transition:opacity .15s}
+#about-min:hover{opacity:1}
+#about-panel.collapsed{width:200px;height:48px;padding:0;cursor:pointer;left:100%;top:100%;transform:translate(calc(-100% - 16px),calc(-100% - 16px))}
+#about-panel.collapsed h2{margin:0;font-size:16px;font-weight:300}
+#about-panel.collapsed .about-body,#about-panel.collapsed #about-min{max-height:0;opacity:0;pointer-events:none}
+</style>
 
-<div class="text-center about-text">
-    <h2 class="theme-secondary">WebODM {{ version }}</h2>
-    
-    <div style="margin-bottom: 16px; margin-top: 16px;"><i class="fab fa-github"></i> <a target="_blank" href="https://github.com/WebODM/WebODM">https://github.com/WebODM/WebODM</a></div>
-
-    <div style="font-size: 90%; opacity: 0.9;" class="theme-secondary">{% blocktrans with link_start="<a href='https://raw.githubusercontent.com/WebODM/WebODM/master/LICENSE.md'>" link_end='</a>' %}This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. See {{link_start}}the GNU Affero General Public License{{link_end}} for more details.{% endblocktrans %}</div>
+<div id="about-scene">
+    <div id="about-panel">
+        <button id="about-min" type="button" title="{% trans 'Minimize' %}"><i class="fa fa-minus"></i></button>
+        <h2>WebODM {{ version }}</h2>
+        <div class="about-body">
+            <div style="margin-bottom: 16px;"><i class="fa fa-globe"></i> <a target="_blank" href="https://webodm.org">https://webodm.org</a></div>
+            <div class="about-license">{% blocktrans with link_start="<a href='https://raw.githubusercontent.com/WebODM/WebODM/master/LICENSE.md' target='_blank'>" link_end='</a>' %}This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. See {{link_start}}the GNU Affero General Public License{{link_end}} for more details.{% endblocktrans %}</div>
+        </div>
+    </div>
 </div>
+
+<script src="/static/app/js/vendor/potree/libs/three.js/build/three.min.js"></script>
+<script>
+(function(){
+var container = document.getElementById('about-scene');
+var WATER_Y = -0.35;
+
+var seed = 7;
+function rnd(){ seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
+function hash(x, z){ var s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return s - Math.floor(s); }
+function lerp(a, b, t){ return a + (b - a) * t; }
+function smooth(a, b, t){ t = Math.max(0, Math.min(1, (t - a) / (b - a))); return t * t * (3 - 2 * t); }
+function noise(x, z){
+    var xi = Math.floor(x), zi = Math.floor(z), u = x - xi, v = z - zi;
+    u = u * u * (3 - 2 * u); v = v * v * (3 - 2 * v);
+    return lerp(lerp(hash(xi, zi), hash(xi + 1, zi), u), lerp(hash(xi, zi + 1), hash(xi + 1, zi + 1), u), v);
+}
+function height(x, z){
+    var h = noise(x * 0.1, z * 0.1) * 2.6 + noise(x * 0.3 + 5, z * 0.3 + 5) * 0.6 - 1.2;
+    var d = Math.sqrt(x * x + z * z);
+    h += d * d * 0.0015;
+    return lerp(-2, h, smooth(8.5, 13.5, d));
+}
+
+var renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+container.appendChild(renderer.domElement);
+
+var scene = new THREE.Scene();
+
+var sky = new THREE.SphereBufferGeometry(300, 16, 10);
+var skyHsl = {};
+new THREE.Color('{{ theme_header_background|slice:":7" }}').getHSL(skyHsl);
+var skySat = Math.min(1, skyHsl.s + 0.1);
+var sp = sky.attributes.position, sc = [], top = new THREE.Color().setHSL(skyHsl.h, skySat, 0.62), hor = new THREE.Color().setHSL(skyHsl.h, skySat, 0.86), tmp = new THREE.Color();
+for (var i = 0; i < sp.count; i++){
+    tmp.copy(top).lerp(hor, 1 - smooth(-0.05, 0.45, sp.getY(i) / 300));
+    sc.push(tmp.r, tmp.g, tmp.b);
+}
+sky.setAttribute('color', new THREE.Float32BufferAttribute(sc, 3));
+scene.add(new THREE.Mesh(sky, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+
+var camera = new THREE.PerspectiveCamera(50, 1, 0.1, 600);
+camera.position.set(0, Math.max(WATER_Y + 0.6, height(0, 12.6) + 0.9), 12.6);
+camera.lookAt(0, camera.position.y - 0.8, -12);
+
+scene.add(new THREE.HemisphereLight(0xcfe9ff, 0xa9c78a, 0.62));
+var sun = new THREE.DirectionalLight(0xfff6dc, 0.8);
+sun.position.set(-30, 22, -22);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.camera.left = sun.shadow.camera.bottom = -34;
+sun.shadow.camera.right = sun.shadow.camera.top = 34;
+sun.shadow.camera.far = 100;
+sun.shadow.bias = -0.002;
+scene.add(sun);
+
+var sunBall = new THREE.Mesh(new THREE.SphereBufferGeometry(6, 12, 10), new THREE.MeshBasicMaterial({ color: 0xfff7c2 }));
+sunBall.position.set(-55, 45, -120);
+scene.add(sunBall);
+var sunGlow = new THREE.Mesh(new THREE.SphereBufferGeometry(12, 12, 10), new THREE.MeshBasicMaterial({ color: 0xfff2a0, transparent: true, opacity: 0.3 }));
+sunGlow.position.copy(sunBall.position);
+scene.add(sunGlow);
+var sunHalo = new THREE.Mesh(new THREE.SphereBufferGeometry(22, 12, 10), new THREE.MeshBasicMaterial({ color: 0xffeeaa, transparent: true, opacity: 0.12 }));
+sunHalo.position.copy(sunBall.position);
+scene.add(sunHalo);
+
+function flat(geo){ if (geo.index) geo = geo.toNonIndexed(); geo.computeVertexNormals(); return geo; }
+function lambert(color){ return new THREE.MeshLambertMaterial({ color: color }); }
+
+var ground = new THREE.PlaneBufferGeometry(140, 140, 90, 90);
+ground.rotateX(-Math.PI / 2);
+var gp = ground.attributes.position, gc = [];
+var grassA = new THREE.Color(0x6fae4e), grassB = new THREE.Color(0x97c86f), sand = new THREE.Color(0xdccb95);
+for (i = 0; i < gp.count; i++){
+    var x = gp.getX(i), z = gp.getZ(i), h = height(x, z);
+    gp.setY(i, h);
+    if (h < WATER_Y + 0.3 && x * x + z * z < 200) tmp.copy(sand);
+    else tmp.copy(grassA).lerp(grassB, noise(x * 0.5 + 9, z * 0.5 + 9));
+    gc.push(tmp.r, tmp.g, tmp.b);
+}
+ground.setAttribute('color', new THREE.Float32BufferAttribute(gc, 3));
+var groundMesh = new THREE.Mesh(flat(ground), new THREE.MeshLambertMaterial({ vertexColors: true }));
+groundMesh.receiveShadow = true;
+scene.add(groundMesh);
+
+var water = new THREE.PlaneBufferGeometry(30, 30, 30, 30);
+water.rotateX(-Math.PI / 2);
+var waterMesh = new THREE.Mesh(water, new THREE.MeshLambertMaterial({ color: 0x46addf, transparent: true, opacity: 0.85 }));
+waterMesh.position.y = WATER_Y;
+waterMesh.receiveShadow = true;
+scene.add(waterMesh);
+var waterBase = water.attributes.position.array.slice();
+
+var swayers = [];
+function placeOnLand(minD, maxD){
+    for (;;){
+        var a = rnd() * Math.PI * 2, d = lerp(minD, maxD, rnd());
+        var x = Math.cos(a) * d, z = Math.sin(a) * d;
+        if (z < 10 && Math.abs(x) < 60) return new THREE.Vector3(x, height(x, z), z);
+    }
+}
+
+var trunkMat = lambert(0x9a7352), canopyMats = [lambert(0x5fae5c), lambert(0x72be68), lambert(0x4e9e56)];
+for (i = 0; i < 16; i++){
+    var p = placeOnLand(15, 40), s = 0.9 + rnd() * 0.9;
+    var tree = new THREE.Group();
+    var trunk = new THREE.Mesh(new THREE.CylinderBufferGeometry(0.18 * s, 0.26 * s, 1.6 * s, 5), trunkMat);
+    trunk.position.y = 0.8 * s; trunk.castShadow = true;
+    tree.add(trunk);
+    var canopy = new THREE.Group();
+    for (var k = 0; k < 3; k++){
+        var c = new THREE.Mesh(flat(new THREE.ConeBufferGeometry((1.5 - k * 0.3) * s, 1.6 * s, 6)), canopyMats[i % 3]);
+        c.position.y = (1.9 + k * 0.9) * s; c.castShadow = true;
+        canopy.add(c);
+    }
+    tree.add(canopy);
+    tree.position.copy(p); tree.rotation.y = rnd() * 6.28;
+    scene.add(tree);
+    swayers.push({ obj: canopy, amp: 0.025, phase: rnd() * 6.28 });
+}
+
+var rockMat = lambert(0xa9b2b5);
+for (i = 0; i < 8; i++){
+    p = placeOnLand(10.8, 13.5); s = 0.3 + rnd() * 0.6;
+    var rock = new THREE.Mesh(flat(new THREE.DodecahedronBufferGeometry(s, 0)), rockMat);
+    rock.position.copy(p); rock.position.y += s * 0.3;
+    rock.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
+    rock.castShadow = true;
+    scene.add(rock);
+}
+
+var reedGeo = new THREE.ConeBufferGeometry(0.06, 1.3, 4);
+reedGeo.translate(0, 0.65, 0);
+var reedMat = lambert(0x9ccb5e);
+for (i = 0; i < 14; i++){
+    p = placeOnLand(11, 12.6);
+    var cluster = new THREE.Group();
+    for (k = 0; k < 6; k++){
+        var reed = new THREE.Mesh(reedGeo, reedMat);
+        reed.position.set((rnd() - 0.5) * 0.6, 0, (rnd() - 0.5) * 0.6);
+        reed.scale.y = 0.7 + rnd() * 0.6;
+        reed.rotation.set((rnd() - 0.5) * 0.2, 0, (rnd() - 0.5) * 0.2);
+        cluster.add(reed);
+    }
+    cluster.position.copy(p); cluster.position.y -= 0.1;
+    scene.add(cluster);
+    swayers.push({ obj: cluster, amp: 0.12, phase: rnd() * 6.28 });
+}
+
+var padMat = lambert(0x66b24f), pads = [];
+for (i = 0; i < 9; i++){
+    var pad = new THREE.Mesh(new THREE.CircleBufferGeometry(0.4 + rnd() * 0.3, 7), padMat);
+    pad.rotation.x = -Math.PI / 2;
+    var a = rnd() * 6.28, d = 2 + rnd() * 7;
+    pad.position.set(Math.cos(a) * d, WATER_Y + 0.03, Math.sin(a) * d);
+    scene.add(pad); pads.push(pad);
+}
+
+var cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x9a9a9a }), clouds = [];
+for (i = 0; i < 7; i++){
+    var cloud = new THREE.Group();
+    var n = 3 + Math.floor(rnd() * 3);
+    for (k = 0; k < n; k++){
+        var puff = new THREE.Mesh(flat(new THREE.IcosahedronBufferGeometry(1 + rnd() * 1.3, 0)), cloudMat);
+        puff.position.set(k * 1.5 - n * 0.75, rnd() * 0.5, (rnd() - 0.5) * 1.2);
+        puff.scale.y = 0.6;
+        cloud.add(puff);
+    }
+    cloud.position.set(-70 + rnd() * 140, 26 + rnd() * 16, -95 + rnd() * 30);
+    cloud.scale.setScalar(2 + rnd() * 1.5);
+    scene.add(cloud); clouds.push({ obj: cloud, speed: 0.6 + rnd() * 0.6 });
+}
+
+var flock = new THREE.Group(), birdMat = new THREE.MeshBasicMaterial({ color: 0x2a3036, side: THREE.DoubleSide }), wings = [];
+var wingL = new THREE.PlaneBufferGeometry(1.8, 0.55); wingL.translate(-0.9, 0, 0); wingL.rotateX(-Math.PI / 2);
+var wingR = new THREE.PlaneBufferGeometry(1.8, 0.55); wingR.translate(0.9, 0, 0); wingR.rotateX(-Math.PI / 2);
+var formation = [[0, 0], [-1.6, -1.4], [1.6, -1.4], [-3.2, -2.8], [3.2, -2.8], [-4.8, -4.2], [4.8, -4.2]];
+for (i = 0; i < formation.length; i++){
+    var bird = new THREE.Group();
+    var l = new THREE.Mesh(wingL, birdMat), r = new THREE.Mesh(wingR, birdMat);
+    bird.add(l); bird.add(r);
+    bird.position.set(formation[i][0], (rnd() - 0.5) * 0.6, formation[i][1]);
+    flock.add(bird);
+    wings.push({ l: l, r: r, phase: rnd() * 6.28 });
+}
+flock.visible = false;
+flock.scale.setScalar(0.55);
+scene.add(flock);
+var birdsNext = 10, birdsT0 = 0, birdsDir = 1, birdsY = 22;
+
+function makeRock(){
+    var g = new THREE.DodecahedronBufferGeometry(0.2, 0), pos = g.attributes.position, seed = Math.random() * 100;
+    for (var j = 0; j < pos.count; j++){
+        var x = pos.getX(j), y = pos.getY(j), z = pos.getZ(j);
+        var f = 0.8 + 0.4 * hash(x * 7.1 + y * 3.3 + seed, z * 5.7 - y * 2.1 + seed);
+        pos.setXYZ(j, x * f, y * f, z * f);
+    }
+    var size = 0.7 + Math.random() * 0.7;
+    g.scale(size * (0.85 + Math.random() * 0.4), size * (0.18 + Math.random() * 0.1), size * (0.85 + Math.random() * 0.4));
+    return flat(g);
+}
+var rockMat = lambert(0x8a9296), rocks = [], rings = [];
+var ringGeo = new THREE.RingBufferGeometry(0.5, 0.62, 20); ringGeo.rotateX(-Math.PI / 2);
+var ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, depthWrite: false });
+var raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2(), waterPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -WATER_Y), hit = new THREE.Vector3();
+function splash(x, z, t){
+    var m = new THREE.Mesh(ringGeo, ringMat.clone());
+    m.position.set(x, WATER_Y + 0.09, z); m.renderOrder = 2;
+    scene.add(m); rings.push({ m: m, t0: t, size: 0.4 + Math.random() });
+}
+var panel = document.getElementById('about-panel');
+document.getElementById('about-min').addEventListener('click', function(e){ e.stopPropagation(); panel.classList.add('collapsed'); });
+panel.addEventListener('click', function(){ panel.classList.remove('collapsed'); });
+
+container.addEventListener('pointerdown', function(e){
+    if (e.target.closest('#about-panel')) return;
+    var r = container.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    if (!raycaster.ray.intersectPlane(waterPlane, hit) || hit.x * hit.x + hit.z * hit.z > 125) return;
+    var start = new THREE.Vector3(camera.position.x + 0.5, camera.position.y - 0.3, camera.position.z - 0.5);
+    var dir = new THREE.Vector3(hit.x - start.x, 0, hit.z - start.z), dist = dir.length();
+    dir.normalize();
+    var m = new THREE.Mesh(makeRock(), rockMat);
+    m.position.copy(start); m.castShadow = true;
+    scene.add(m);
+    rocks.push({ m: m, p0: start, p1: hit.clone(), dir: dir, step: Math.min(dist * 0.45, 4), h: 0.25, dur: dist / 14, t0: clock.getElapsedTime(), left: 1 + Math.floor(Math.random() * 8) });
+});
+
+function resize(){
+    var w = container.clientWidth, h = container.clientHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+var clock = new THREE.Clock();
+function animate(){
+    requestAnimationFrame(animate);
+    if (document.hidden) return;
+    var dt = Math.min(clock.getDelta(), 0.05), t = clock.getElapsedTime();
+    var wind = 0.6 + 0.4 * Math.sin(t * 0.25) + 0.2 * Math.sin(t * 0.9);
+
+    var wp = water.attributes.position.array;
+    for (i = 0; i < wp.length; i += 3){
+        var x = waterBase[i], z = waterBase[i + 2];
+        var w = (x * 0.8 + z * 0.6) * 0.7 - t * 0.6;
+        wp[i + 1] = 0.03 * Math.sin(w) + 0.008 * Math.sin(w * 2.3);
+    }
+    water.attributes.position.needsUpdate = true;
+    water.computeVertexNormals();
+
+    for (i = 0; i < pads.length; i++) pads[i].position.y = WATER_Y + 0.04 + Math.sin((pads[i].position.x * 0.8 + pads[i].position.z * 0.6) * 0.7 - t * 0.6) * 0.02;
+
+    for (i = 0; i < swayers.length; i++){
+        var s = swayers[i];
+        s.obj.rotation.z = wind * s.amp * (Math.sin(t * 1.6 + s.phase) + 0.6);
+        s.obj.rotation.x = wind * s.amp * 0.4 * Math.sin(t * 1.1 + s.phase);
+    }
+
+    if (!flock.visible && t >= birdsNext){
+        flock.visible = true; birdsT0 = t;
+        birdsDir = Math.random() < 0.5 ? 1 : -1;
+        birdsY = 18 + Math.random() * 8;
+    }
+    if (flock.visible){
+        var bk = (t - birdsT0) / 14, th = Math.tan(camera.fov * Math.PI / 360) * camera.aspect;
+        var bx0 = (camera.position.z + 100) * th + 10, bx1 = (camera.position.z + 55) * th + 10;
+        flock.rotation.y = Math.atan2(birdsDir * (bx0 + bx1), 45);
+        flock.position.set(birdsDir * (bk * (bx0 + bx1) - bx0), birdsY + Math.sin(t * 0.5) * 1.5, -100 + bk * 45);
+        for (i = 0; i < wings.length; i++){
+            var flap = Math.sin(t * 11.4 + wings[i].phase) * 0.7;
+            wings[i].l.rotation.z = -flap; wings[i].r.rotation.z = flap;
+        }
+        if (bk >= 1){ flock.visible = false; birdsNext = t + 20 + Math.random() * 10; }
+    }
+
+    for (i = rocks.length - 1; i >= 0; i--){
+        var rk = rocks[i], k = Math.min(1, (t - rk.t0) / rk.dur);
+        rk.m.position.lerpVectors(rk.p0, rk.p1, k);
+        rk.m.position.y += rk.h * 4 * k * (1 - k);
+        rk.m.rotation.y -= dt * 25;
+        if (k >= 1){
+            splash(rk.p1.x, rk.p1.z, t);
+            rk.left--;
+            var nx = rk.p1.x + rk.dir.x * rk.step, nz = rk.p1.z + rk.dir.z * rk.step;
+            if (rk.left <= 0 || nx * nx + nz * nz > 125){ scene.remove(rk.m); rk.m.geometry.dispose(); rocks.splice(i, 1); continue; }
+            rk.p0.copy(rk.p1); rk.p1.set(nx, WATER_Y, nz);
+            rk.step *= 0.72; rk.h = rk.h > 0.2 ? 0.2 : rk.h * 0.7; rk.dur = rk.step / 11; rk.t0 = t;
+        }
+    }
+    for (i = rings.length - 1; i >= 0; i--){
+        var age = t - rings[i].t0;
+        if (age > 0.9){ scene.remove(rings[i].m); rings[i].m.material.dispose(); rings.splice(i, 1); continue; }
+        rings[i].m.scale.setScalar((1 + age * 3) * rings[i].size);
+        rings[i].m.material.opacity = 0.7 * (1 - age / 0.9);
+    }
+
+    var breath = 0.5 + 0.5 * Math.sin(t * Math.PI * 2 / 5.5);
+    sunGlow.scale.setScalar(1 + breath * 0.12);
+    sunHalo.scale.setScalar(1 + breath * 0.2);
+    sunGlow.material.opacity = 0.26 + breath * 0.1;
+    sunHalo.material.opacity = 0.09 + breath * 0.07;
+
+    for (i = 0; i < clouds.length; i++){
+        var c = clouds[i].obj;
+        c.position.x += clouds[i].speed * wind * dt * 1.5;
+        var limit = (camera.position.z - c.position.z) * Math.tan(camera.fov * Math.PI / 360) * camera.aspect + 25;
+        if (c.position.x > limit) c.position.x = -limit;
+    }
+
+    renderer.render(scene, camera);
+}
+animate();
+})();
+</script>
 
 {% endblock %}

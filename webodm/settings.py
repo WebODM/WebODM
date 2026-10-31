@@ -44,6 +44,9 @@ DEBUG = os.environ.get('WO_DEBUG', 'YES') == 'YES' or TESTING
 DEV = os.environ.get('WO_DEV', 'NO') == 'YES' and not TESTING
 DEV_WATCH_PLUGINS = DEV and os.environ.get('WO_DEV_WATCH_PLUGINS', 'NO') == 'YES'
 SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = os.environ.get('WO_SSL', 'NO') == 'YES'
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_CROSS_ORIGIN_OPENER_POLICY = None
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 INTERNAL_IPS = ['127.0.0.1']
 
 ALLOWED_HOSTS = ['*']
@@ -94,17 +97,14 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'django.contrib.gis',
     'django_filters',
     'guardian',
     'rest_framework',
     'rest_framework_nested',
     'drf_yasg',
-    'webpack_loader',
     'corsheaders',
     'colorfield',
     'imagekit',
-    'codemirror2',
     'app',
     'nodeodm',
 ]
@@ -130,7 +130,7 @@ WSGI_APPLICATION = 'webodm.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': os.environ.get('WO_DATABASE_ENGINE', 'django.contrib.gis.db.backends.postgis'),
+        'ENGINE': os.environ.get('WO_DATABASE_ENGINE', 'django.db.backends.postgresql'),
         'NAME': os.environ.get('WO_DATABASE_NAME', 'webodm_dev'),
         'USER': os.environ.get('WO_DATABASE_USER', 'postgres'),
         'PASSWORD': os.environ.get('WO_DATABASE_PASSWORD', 'postgres'),
@@ -171,8 +171,10 @@ AUTHENTICATION_BACKENDS = (
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'Etc/UTC'
 USE_I18N = True
-USE_L10N = True
 USE_TZ = True
+
+# https://docs.djangoproject.com/en/6.1/topics/db/models/#automatic-primary-key-fields
+DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 
 LOCALE_PATHS = [
     os.path.join(BASE_DIR, 'locale')
@@ -202,14 +204,6 @@ FILE_UPLOAD_HANDLERS = [
 ]
 
 # Webpack
-WEBPACK_LOADER = {
-    'DEFAULT': {
-        'BUNDLE_DIR_NAME': 'app/bundles/',
-        'STATS_FILE': os.path.join(BASE_DIR, 'webpack-stats.json'),
-    }
-}
-
-
 # Logging
 LOGGING = {
     'version': 1,
@@ -245,10 +239,6 @@ LOGGING = {
             'handlers': ['console'],
             'level': 'INFO',
         },
-        'apscheduler.executors.default': {
-            'handlers': ['console'],
-            'level': 'WARNING',
-        }
     }
 }
 
@@ -258,11 +248,12 @@ LOGIN_REDIRECT_URL = '/dashboard/'
 LOGIN_URL = '/login/'
 
 # CORS (very relaxed settings, users might want to change this in production)
-CORS_ORIGIN_ALLOW_ALL = True
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 SESSION_COOKIE_SAMESITE = None
 
 # File uploads
+MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'app', 'media')
 if TESTING:
     MEDIA_ROOT = os.path.join(BASE_DIR, 'app', 'media_test')
@@ -271,6 +262,7 @@ MEDIA_CACHE = os.path.join(MEDIA_ROOT, 'CACHE')
 MEDIA_GRIDS = os.path.join(MEDIA_ROOT, 'grids')
 
 FILE_UPLOAD_TEMP_DIR = MEDIA_TMP
+SILENCED_SYSTEM_CHECKS = ['files.E001']
 
 TEMPLATES = [
     {
@@ -314,7 +306,7 @@ REST_FRAMEWORK = {
   'DEFAULT_AUTHENTICATION_CLASSES': (
     'rest_framework.authentication.SessionAuthentication',
     'rest_framework.authentication.BasicAuthentication',
-    'rest_framework_jwt.authentication.JSONWebTokenAuthentication',
+    'app.api.authentication.JSONWebTokenAuthentication',
     'app.api.authentication.JSONWebTokenAuthenticationQS',
   ),
   'PAGE_SIZE': 10,

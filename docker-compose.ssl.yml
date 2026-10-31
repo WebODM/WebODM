@@ -1,5 +1,4 @@
 # This configuration adds support for SSL
-version: '2.1'
 volumes:
   letsencrypt:
     driver: local

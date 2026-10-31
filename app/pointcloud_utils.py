@@ -5,7 +5,6 @@ import json
 import rasterio
 import shutil
 from app.geoutils import geom_transform_wkt_bbox
-from django.contrib.gis.geos import GEOSGeometry
 from osgeo import osr
 
 logger = logging.getLogger('app.logger')
@@ -15,7 +14,7 @@ def export_pointcloud(input, output, **opts):
     proj = opts.get('proj')
     export_format = opts.get('format')
     resample = float(opts.get('resample', 0))
-    crop_wkt = opts.get('crop')
+    crop = opts.get('crop')
     crop_reference = opts.get('crop_reference')
 
     resample_args = []
@@ -41,10 +40,8 @@ def export_pointcloud(input, output, **opts):
     if resample > 0:
         resample_args = ['sample', '--filters.sample.radius=%s' % resample]
     
-    if crop_wkt is not None and crop_reference is not None:
+    if crop is not None and crop_reference is not None:
         with rasterio.open(crop_reference) as ds:
-            crop = GEOSGeometry(crop_wkt)
-            crop.srid = 4326
             cutline, bounds = geom_transform_wkt_bbox(crop, ds, wkt_crs="projected")
 
         crop_args =  ['crop', "--filters.crop.polygon=%s" % cutline]

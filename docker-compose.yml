@@ -1,12 +1,11 @@
 # This configuration does not include a processing node
 # Which makes for faster setup times
-version: '2.1'
 volumes:
   dbdata:
   appmedia:
 services:
   db:
-    image: webodm/webodm_db
+    image: webodm/webodm_db:18
     container_name: db
     expose:
       - "5432"
@@ -39,8 +38,9 @@ services:
     restart: unless-stopped
     oom_score_adj: 0
   broker:
-    image: redis:7.0.10
+    image: redis:8.2-alpine
     container_name: broker
+    command: redis-server --loglevel warning
     restart: unless-stopped
     oom_score_adj: -500
   worker:

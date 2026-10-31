@@ -12,9 +12,8 @@ def update_shifted_tasks(apps, schema_editor):
         import math
         from pyproj import CRS
         from pyproj.transformer import TransformerGroup
-        from django.contrib.gis.geos import GEOSGeometry
         from webodm import settings
-        from app.geoutils import get_raster_bounds_wkt
+        from app.geoutils import get_raster_bounds_geojson
         from app.grids import check_download_grid_for
 
         Task = apps.get_model('app', 'Task')
@@ -36,9 +35,9 @@ def update_shifted_tasks(apps, schema_editor):
                     (os.path.join(assets_dir, "odm_dem", "dsm.tif"), 'dsm_extent'),
                     (os.path.join(assets_dir, "odm_dem", "dtm.tif"), 'dtm_extent')]:
                 if os.path.exists(raster_path):
-                    extent_wkt = get_raster_bounds_wkt(raster_path)
-                    if extent_wkt is not None:
-                        setattr(t, field, GEOSGeometry(extent_wkt, srid=4326))
+                    extent = get_raster_bounds_geojson(raster_path)
+                    if extent is not None:
+                        setattr(t, field, extent)
 
         # Group task IDs (not instances, to keep memory usage low) by CRS
         groups = {}
@@ -100,14 +99,13 @@ def update_shifted_tasks(apps, schema_editor):
                         # Adjust crop
                         if t.crop is not None:
 
-                            # Note: GEOS returns lat/lon instead of lon/lat and this might break in the future
-                            crop = json.loads(t.crop.geojson)
+                            crop = t.crop
                             if 'coordinates' in crop:
                                 crop['coordinates'] = [
-                                    [list(fix(lon_bad, lat_bad)) for lat_bad, lon_bad in ring]
+                                    [list(fix(lon_bad, lat_bad)) for lon_bad, lat_bad in ring]
                                     for ring in crop['coordinates']
                                 ]
-                                t.crop = json.dumps(crop)
+                                t.crop = crop
 
                         t.save()
                         updated.append({'id': str(task_id), kind: value})

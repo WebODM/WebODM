@@ -15,7 +15,7 @@ from PIL import Image
 from django.contrib.auth.models import User
 from rest_framework import status
 from rest_framework.test import APIClient
-from django.contrib.gis.geos import Polygon
+from app.geoutils import bbox_to_polygon
 
 import worker
 from django.utils import timezone
@@ -600,7 +600,7 @@ class TestApiTask(BootTransactionTestCase):
             # Can download exported orthophoto
             res = client.get("/api/workers/get/{}?filename=odm_orthophoto_NDVI.tif".format(celery_task_id))
             self.assertEqual(res.status_code, status.HTTP_200_OK)
-            self.assertEquals(res.get('Content-Disposition'), "attachment; filename=odm_orthophoto_NDVI.tif")
+            self.assertEqual(res.get('Content-Disposition'), "attachment; filename=odm_orthophoto_NDVI.tif")
             with Image.open(io.BytesIO(res.content)) as i:
                 self.assertEqual(i.width, 212)
                 self.assertEqual(i.height, 212)
@@ -1602,11 +1602,11 @@ class TestApiTask(BootTransactionTestCase):
         task_completed = Task.objects.create(project=project, name="Test Success", 
                                         status=status_codes.COMPLETED,
                                         available_assets=["dsm.tif", "georeferenced_model.laz"],
-                                        dsm_extent=Polygon.from_bbox([-82.8325,27.9578,-82.8310,27.9593]))
+                                        dsm_extent=bbox_to_polygon([-82.8325,27.9578,-82.8310,27.9593]))
         task_fail = Task.objects.create(project=project, name="Test Fail", 
                                         status=status_codes.FAILED,
                                         available_assets=["orthophoto.tif", "georeferenced_model.laz"],
-                                        orthophoto_extent=Polygon.from_bbox([-82.8325,27.9578,-82.8310,27.9593]))
+                                        orthophoto_extent=bbox_to_polygon([-82.8325,27.9578,-82.8310,27.9593]))
         client = APIClient()
         client.login(username="testuser", password="test1234")
 
