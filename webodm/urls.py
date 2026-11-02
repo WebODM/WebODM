@@ -18,6 +18,10 @@ import os
 from django.urls import include, re_path
 from django.urls import re_path
 from django.contrib import admin
+from django.contrib.auth.views import redirect_to_login
+from django.core.exceptions import PermissionDenied
+from django.http import HttpResponseRedirect
+from django.urls import reverse
 from . import settings
 from django.views.static import serve
 
@@ -26,6 +30,15 @@ from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 
 admin.site.site_header = 'WebODM Administration'
+
+def admin_login(request, extra_context=None):
+    if request.user.is_authenticated:
+        if admin.site.has_permission(request):
+            return HttpResponseRedirect(reverse('admin:index'))
+        raise PermissionDenied
+    return redirect_to_login(request.GET.get('next') or reverse('admin:index'))
+
+admin.site.login = admin_login
 
 schema_view = get_schema_view(
    openapi.Info(
