@@ -653,26 +653,25 @@ class TaskThumbnail(TaskNestedView):
                         out_height,
                         out_width,
                     ), resampling=rasterio.enums.Resampling.nearest)
-                img = np.zeros((len(indexes), thumb_size, thumb_size), dtype=rgb.dtype)
-                y_offset = (thumb_size - out_height) // 2
-                x_offset = (thumb_size - out_width) // 2
-
-                # Place the output image in the center
-                img[:, y_offset:y_offset + out_height, x_offset:x_offset + out_width] = rgb
             else:
                 w = raster.width
                 h = raster.height
                 d = max(w, h)
-                dw = (d - w) // 2
-                dh = (d - h) // 2
-                win = rasterio.windows.Window(-dw, -dh, d, d)
+                out_width = max(1, round(w * thumb_size / d))
+                out_height = max(1, round(h * thumb_size / d))
 
-                img = raster.read(indexes=indexes, window=win, boundless=True, fill_value=0, out_shape=(
+                rgb = raster.read(indexes=indexes, out_shape=(
                     len(indexes),
-                    thumb_size,
-                    thumb_size,
+                    out_height,
+                    out_width,
                 ), resampling=rasterio.enums.Resampling.nearest)
 
+            img = np.zeros((len(indexes), thumb_size, thumb_size), dtype=rgb.dtype)
+            y_offset = (thumb_size - out_height) // 2
+            x_offset = (thumb_size - out_width) // 2
+
+            # Place the output image in the center
+            img[:, y_offset:y_offset + out_height, x_offset:x_offset + out_width] = rgb
             img = img.transpose((1, 2, 0))
 
         if img.dtype != np.uint8:
