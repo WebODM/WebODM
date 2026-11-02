@@ -41,6 +41,7 @@ def logout(request):
     auth_logout(request)
     return render(request, 'registration/logged_out.html', {'title': _('Logged out')})
 
+@login_required
 def dashboard(request):
     if cluster_mode():    
         if request.user.profile.cluster_id is not None and request.user.profile.cluster_id != settings.CLUSTER_ID:
