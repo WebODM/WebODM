@@ -22,6 +22,11 @@ log() {
 	echo "[db-upgrade-9-to-18] $*"
 }
 
+box() {
+	local w=58 pad=$(( (58 - ${#1}) / 2 ))
+	log "$(printf "|%*s%s%*s|" "$pad" "" "$1" "$((w - pad - ${#1}))" "")"
+}
+
 if [ -s "$NEW_DIR/PG_VERSION" ]; then
 	log "Database is already at PostgreSQL $(cat "$NEW_DIR/PG_VERSION"), nothing to do"
 	exit 0
@@ -132,7 +137,15 @@ EOSQL
 main() {
 	trap on_error ERR
 
-	log "Upgrading PostgreSQL $OLD_VERSION database to PostgreSQL $NEW_MAJOR"
+	log "+----------------------------------------------------------+"
+	box ""
+	box "Upgrading PostgreSQL $OLD_VERSION to $NEW_MAJOR"
+	box ""
+	box "This could take a few minutes."
+	box ""
+	box "DO NOT INTERRUPT THE PROCESS!"
+	box ""
+	log "+----------------------------------------------------------+"
 	log "Started $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
 
 	cleanup
