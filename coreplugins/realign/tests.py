@@ -219,11 +219,10 @@ class RealignStateTest(BootTestCase):
         """El tilejson del corregido debe responder 200 con bounds en EPSG:4326.
         (Regresión: usaba COGReader.crs, inexistente en rio-tiler 2.1 → 500 → el frontend
         nunca cambiaba de capa y 'se veía igual')."""
-        from app.plugins.functions import get_plugins_persistent_path
         from . import corrections
 
         task = self._task(self._project())
-        out_dir = get_plugins_persistent_path('realign', 'task_{}'.format(task.id))
+        out_dir = contract.corrected_dir(task.id)
         self.addCleanup(shutil.rmtree, out_dir, ignore_errors=True)
         os.makedirs(out_dir, exist_ok=True)
         tmp_src = os.path.join(out_dir, '_src.tif')
@@ -256,16 +255,40 @@ class RealignStateTest(BootTestCase):
         self.assertEqual(r512.status_code, status.HTTP_200_OK)
         self.assertEqual(r512['Content-Type'], 'image/png')
 
+    def test_tiles_follow_the_path_recorded_when_applying(self):
+        """Los corregidos generados antes de `realign_data` siguen en la carpeta antigua y el
+        estado registra esa ruta. (Regresión: el estado decía 'aplicado' —el archivo existía—
+        pero los tiles calculaban la ruta nueva y respondían 404, dejando la ortofoto sin mover)."""
+        from . import corrections
+
+        task = self._task(self._project())
+        legacy_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, legacy_dir, ignore_errors=True)
+        tmp_src = os.path.join(legacy_dir, '_src.tif')
+        _make_synthetic_raster(tmp_src, bands=3)
+        legacy_path = os.path.join(legacy_dir, 'orthophoto.tif')
+        corrections.apply_similarity_to_raster(
+            tmp_src, legacy_path, {'scale': 1.0, 'cos': 1.0, 'sin': 0.0, 'tx': 0.0, 'ty': 0.0}, 'near')
+        store.set_state(str(task.id), {'state': 'applied', 'corrected_paths': {'orthophoto': legacy_path}})
+
+        self.client.login(username="testuser", password="test1234")
+        self.assertTrue(self.client.get(self._url(task, "state")).data['corrected_available'])
+        res = self.client.get(self._url(task, "tilejson/orthophoto"))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        # Revertir borra el corregido registrado aunque no esté en la carpeta actual.
+        self.client.post(self._url(task, "revert"))
+        self.assertFalse(os.path.isfile(legacy_path))
+
     def test_dsm_tile_honors_color_map_and_rescale(self):
         """El tile de dsm/dtm debe usar el color_map/rescale de la URL (los que el core
         adjunta a la capa original: viridis + min/max reales), no el gris fijo anterior.
         (Regresión: se ignoraban esos parámetros y el DSM/DTM corregido se veía plano/gris
         en vez de igual al original)."""
-        from app.plugins.functions import get_plugins_persistent_path
         from . import corrections
 
         task = self._task(self._project())
-        out_dir = get_plugins_persistent_path('realign', 'task_{}'.format(task.id))
+        out_dir = contract.corrected_dir(task.id)
         self.addCleanup(shutil.rmtree, out_dir, ignore_errors=True)
         os.makedirs(out_dir, exist_ok=True)
         tmp_src = os.path.join(out_dir, '_dsm_src.tif')
@@ -736,13 +759,12 @@ class RealignPointCloudApiTest(BootTestCase):
     # --- T023: cancelar / descartar -------------------------------------------
 
     def test_delete_pointcloud_cancels_running_and_cleans_tmp(self):
-        from app.plugins.functions import get_plugins_persistent_path
 
         task = self._task(self._project())
         self._seed_assets(task)
         self._apply(task, use_scale=False)
 
-        out_dir = get_plugins_persistent_path('realign', 'task_{}'.format(task.id))
+        out_dir = contract.corrected_dir(task.id)
         os.makedirs(out_dir, exist_ok=True)
         tmp_path = os.path.join(out_dir, 'pointcloud.tmp.laz')
         with open(tmp_path, 'wb') as f:

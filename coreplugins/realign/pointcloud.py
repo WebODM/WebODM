@@ -9,7 +9,9 @@ por ``subprocess`` con un pipeline ``readers.las -> filters.transformation -> wr
 
 import json
 import os
+import shutil
 import subprocess
+import sys
 import time
 
 # Menor que el paso de cuantización del LAZ (típicamente >= 0.001 m): dos huellas con una
@@ -44,15 +46,53 @@ def build_transformation_matrix(transform):
     return " ".join(repr(float(v)) for row in rows for v in row)
 
 
+def pdal_command():
+    """Ejecutable de ``pdal`` y entorno con el que lanzarlo: ``(exe, env)``.
+
+    En Docker y en instalaciones nativas está en el PATH (``env`` es ``None``: el heredado). La
+    app de escritorio de Windows no lo pone en el PATH del worker, pero lo trae dentro de ODX y
+    solo arranca con las DLL de GDAL de ese mismo ODX: se reproduce el entorno de su
+    ``win32env.bat``. Devuelve ``(None, None)`` si no hay ``pdal`` en ningún lado.
+    """
+    exe = shutil.which('pdal')
+    if exe:
+        return exe, None
+
+    # <app>/apps/python39/python.exe -> <app>/apps/ODX
+    odx = os.path.join(os.path.dirname(os.path.dirname(sys.executable)), 'ODX')
+    bin_dir = os.path.join(odx, 'SuperBuild', 'install', 'bin')
+    exe = os.path.join(bin_dir, 'pdal.exe')
+    if not os.path.isfile(exe):
+        return None, None
+
+    site_packages = os.path.join(odx, 'venv', 'Lib', 'site-packages')
+    gdal_dir = os.path.join(site_packages, 'osgeo')
+    env = dict(os.environ)
+    env.update({
+        'PATH': os.pathsep.join([gdal_dir, bin_dir, env.get('PATH', '')]),
+        'PDAL_DRIVER_PATH': bin_dir,
+        'GDAL_DATA': os.path.join(gdal_dir, 'data', 'gdal'),
+        'PROJ_LIB': os.path.join(site_packages, 'rasterio', 'proj_data'),
+    })
+    return exe, env
+
+
+def _pdal_output(args):
+    exe, env = pdal_command()
+    if exe is None:
+        raise FileNotFoundError("No se encontró el ejecutable de PDAL")
+    return subprocess.check_output([exe] + args, env=env)
+
+
 def read_las_summary(las_path):
     """Lee el resumen de la cabecera (bounds, num_points) sin recorrer los puntos."""
-    out = subprocess.check_output(['pdal', 'info', '--summary', las_path])
+    out = _pdal_output(['info', '--summary', las_path])
     return json.loads(out.decode('utf-8'))['summary']
 
 
 def read_las_metadata(las_path):
     """Lee la cabecera completa (scale_*, offset_z, dataformat_id, SRS, ...)."""
-    out = subprocess.check_output(['pdal', 'info', '--metadata', las_path])
+    out = _pdal_output(['info', '--metadata', las_path])
     return json.loads(out.decode('utf-8'))['metadata']
 
 
@@ -153,14 +193,18 @@ def run_pointcloud_correction(task_id, src_path, out_dir, transform, applied_by=
     fuente en un namespace vacío (``app/plugins/worker.py: eval_async``), sin los globals del
     módulo. Por eso los imports van **dentro** y son **absolutos**, y las funciones auxiliares del
     módulo se acceden vía ``pointcloud.*`` — mismo patrón que ``corrections.py:
-    run_correction_pipeline``.
+    run_correction_pipeline`` (incluido el import que funciona como zip o como coreplugin).
     """
     import datetime
     import json
     import os
     import subprocess
     import time
-    from coreplugins.realign import pointcloud, store
+    import app.plugins
+    try:
+        from plugins.realign import pointcloud, store
+    except ImportError:
+        from coreplugins.realign import pointcloud, store
 
     def _now():
         return datetime.datetime.utcnow().isoformat() + 'Z'
@@ -229,8 +273,11 @@ def run_pointcloud_correction(task_id, src_path, out_dir, transform, applied_by=
     with open(pipeline_path, 'w') as f:
         json.dump(pipeline, f)
 
-    proc = subprocess.Popen(['pdal', 'pipeline', pipeline_path],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    pdal_exe, pdal_env = pointcloud.pdal_command()
+    if pdal_exe is None:
+        return _fail("No se encontró el ejecutable de PDAL.", pipeline_path=pipeline_path)
+    proc = subprocess.Popen([pdal_exe, 'pipeline', pipeline_path],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=pdal_env)
 
     while proc.poll() is None:
         if pointcloud._safe_should_cancel(should_cancel):

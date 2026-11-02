@@ -2,12 +2,12 @@
 	"name": "Realign",
 	"webodmMinVersion": "3.2.5",
 	"description": "Manually realign 2D raster products (orthophoto, DSM, DTM) to the base map using control-point pairs, previewing the similarity transform and applying it non-destructively",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"author": "Obed Macallums",
 	"email": "obedmacallums@gmail.com",
-	"repository": "https://github.com/OpenDroneMap/WebODM",
+	"repository": "https://github.com/obedmacallums/WebODM/tree/master/coreplugins/realign",
 	"tags": ["realign", "georeferencing", "orthophoto", "dsm", "dtm"],
-	"homepage": "https://github.com/OpenDroneMap/WebODM",
+	"homepage": "https://github.com/obedmacallums/WebODM/tree/master/coreplugins/realign",
 	"experimental": false,
 	"deprecated": false
 }

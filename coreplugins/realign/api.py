@@ -8,10 +8,9 @@ from django.utils.translation import gettext_lazy as _
 
 from app.plugins.views import TaskView, GetTaskResult
 from app.plugins.worker import run_function_async
-from app.plugins.functions import get_plugins_persistent_path
 from app.api.common import check_project_perms
 
-from . import transform, store, corrections, pointcloud
+from . import transform, store, corrections, pointcloud, contract
 
 
 # Productos ráster 2D que el plugin puede realinear (comparten georreferenciación).
@@ -37,22 +36,34 @@ def _now():
 
 
 def _out_dir(pk):
-    return get_plugins_persistent_path('realign', 'task_{}'.format(pk))
+    return contract.corrected_dir(pk)
+
+
+def _stored_corrected_paths(pk):
+    return (store.get_state(pk) or {}).get('corrected_paths') or {}
 
 
 def _corrected_path(pk, product_type):
-    return os.path.join(_out_dir(pk), '{}.tif'.format(product_type))
+    """Ruta del corregido. Manda la que registró el pipeline al aplicar —la misma que usan el
+    contrato y `corrected_available`—: los corregidos generados antes de que existiera
+    `realign_data` siguen en la carpeta antigua, y calcular la ruta aquí por separado hacía que el
+    estado dijera 'aplicado' mientras los tiles respondían 404."""
+    return (_stored_corrected_paths(pk).get(product_type)
+            or os.path.join(_out_dir(pk), '{}.tif'.format(product_type)))
 
 
 def _remove_corrected(pk):
+    # Los registrados en el estado (estén donde estén) más lo que haya en la carpeta actual.
+    paths = set(_stored_corrected_paths(pk).values())
     d = _out_dir(pk)
     if os.path.isdir(d):
-        for f in os.listdir(d):
-            if f.endswith('.tif'):
-                try:
-                    os.remove(os.path.join(d, f))
-                except OSError:
-                    pass
+        paths.update(os.path.join(d, f) for f in os.listdir(d) if f.endswith('.tif'))
+    for path in paths:
+        if path.endswith('.tif') and os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
 
 def _abort_apply(state):
@@ -396,6 +407,7 @@ POINTCLOUD_REASON_MESSAGES = {
     'not_applied': _('Aplica primero la realineación (no solo la previsualización) antes de generar la nube corregida.'),
     'scale_enabled': _('La corrección de nube solo está disponible en modo rígido. Destilda "Usar escala", vuelve a aplicar la realineación y repite la generación.'),
     'already_running': _('Ya hay una generación de nube en curso para esta tarea.'),
+    'pdal_missing': _('No se encontró PDAL en el servidor: no se puede generar la nube corregida.'),
 }
 
 
@@ -406,7 +418,9 @@ def _pointcloud_files(pk):
 
 
 def _remove_pointcloud_files(pk):
-    for p in _pointcloud_files(pk):
+    # Igual que con los rásteres: la ruta registrada puede ser de la carpeta antigua.
+    stored = (store.get_pointcloud_state(pk) or {}).get('path')
+    for p in _pointcloud_files(pk) + ([stored] if stored else []):
         if os.path.isfile(p):
             try:
                 os.remove(p)
@@ -437,6 +451,10 @@ def _pointcloud_eligibility(task, pk):
     """
     if POINTCLOUD_ASSET not in (task.available_assets or []):
         return False, 'no_pointcloud'
+
+    # Mejor decirlo antes de lanzar nada que dejar que el worker falle a mitad de camino.
+    if pointcloud.pdal_command()[0] is None:
+        return False, 'pdal_missing'
 
     state = store.get_state(pk) or {}
     if state.get('state') != 'applied':

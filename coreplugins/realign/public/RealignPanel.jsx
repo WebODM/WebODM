@@ -16,6 +16,7 @@ const POINTCLOUD_REASON_TEXT = {
   not_applied: () => _("Aplica primero la realineación (no solo la previsualización) para poder generar la nube corregida."),
   scale_enabled: () => _('La corrección de nube solo está disponible en modo rígido. Destilda "Usar escala", vuelve a Aplicar y repite la generación.'),
   already_running: () => _("Ya hay una generación de nube en curso para esta tarea."),
+  pdal_missing: () => _("No se encontró PDAL en el servidor: no se puede generar la nube corregida."),
 };
 
 function fmtBytes(n){
@@ -127,8 +128,11 @@ export default class RealignPanel extends React.Component {
   // --- Restaurar estado persistido (FR-013) --------------------------------
 
   restoreState = (res, cb) => {
-    // 'applying' (job interrumpido) se trata como previsualización recuperable.
-    const applied = res.state === 'applied';
+    // 'applying' (job interrumpido) se trata como previsualización recuperable. 'applied' solo
+    // cuenta si los corregidos siguen en disco: si se borraron (a mano, o perdidos al actualizar
+    // desde una versión que los guardaba dentro del plugin), redirigir las capas dejaría el mapa
+    // en blanco; así el panel vuelve a ofrecer Aplicar.
+    const applied = res.state === 'applied' && !!res.corrected_available;
     // Estados persistidos antes de esta capacidad no tienen use_scale: se interpretan como true
     // (preserva el comportamiento con el que se crearon — FR-020, D9).
     const useScale = (res.transform && typeof res.transform.use_scale === 'boolean') ? res.transform.use_scale : true;

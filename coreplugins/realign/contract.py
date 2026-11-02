@@ -18,10 +18,16 @@ CONTRACT_VERSION = 1
 # contrato no puede depender de un módulo de vistas, que arrastra DRF y el tiler.
 PRODUCT_TYPES = ('orthophoto', 'dsm', 'dtm')
 
+# Los productos corregidos viven fuera de la carpeta del plugin. Instalado desde un zip,
+# `media/plugins/realign` es el propio código, y actualizarlo desde el panel de administración
+# reemplaza esa carpeta entera: con los datos dentro, cada actualización los borraba. WebODM
+# ignora `realign_data` al buscar plugins porque no tiene `plugin.py`.
+DATA_DIR = 'realign_data'
+
 
 def corrected_dir(task_id):
     from app.plugins.functions import get_plugins_persistent_path
-    return get_plugins_persistent_path('realign', 'task_{}'.format(task_id))
+    return get_plugins_persistent_path(DATA_DIR, 'task_{}'.format(task_id))
 
 
 def corrected_path(task_id, product_type):

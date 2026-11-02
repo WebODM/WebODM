@@ -120,10 +120,19 @@ def run_correction_pipeline(task_id, products, out_dir, T, applied_by=None,
     todos los imports van **dentro** y son **absolutos**, y las funciones/constantes auxiliares
     se acceden a través del módulo importado (``corrections.*``) — nunca por nombre libre ni
     con imports relativos (``from . import ...``). Mismo patrón que ``coreplugins/viewshed``.
+
+    El paquete cambia según cómo esté instalado: ``plugins.realign`` si se subió como zip
+    (vive en ``MEDIA_ROOT/plugins``) o ``coreplugins.realign`` si viene con el código de WebODM.
+    Importar ``app.plugins`` deja ``MEDIA_ROOT`` en ``sys.path``, que es lo que hace importable
+    el primero.
     """
     import os
     import datetime
-    from coreplugins.realign import corrections, store
+    import app.plugins
+    try:
+        from plugins.realign import corrections, store
+    except ImportError:
+        from coreplugins.realign import corrections, store
 
     def _now():
         return datetime.datetime.utcnow().isoformat() + 'Z'

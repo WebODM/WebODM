@@ -1,0 +1,4 @@
+node_modules/
+dist/
+# coreplugins/.gitignore ignora los webpack.config.js que genera WebODM en public/; este no lo es.
+!webpack.config.js
