@@ -180,10 +180,10 @@ main() {
 
 	log "Initializing PostgreSQL $NEW_MAJOR cluster"
 	mkdir -m 700 "$TMP_DIR"
-	"$NEW_BIN/initdb" -D "$TMP_DIR" --username=postgres --pwfile=<(echo "$POSTGRES_PASSWORD") --encoding=UTF8 --locale=en_US.UTF-8 > /dev/null
+	"$NEW_BIN/initdb" -D "$TMP_DIR" --username=postgres --pwfile=<(echo "$POSTGRES_PASSWORD") --encoding=UTF8 --locale=en_US.UTF-8 --no-sync > /dev/null
 	echo "host all all $POSTGRES_ALLOW_HOST $POSTGRES_HOST_AUTH_METHOD" >> "$TMP_DIR/pg_hba.conf"
 	"$NEW_BIN/pg_ctl" -D "$TMP_DIR" -w \
-		-o "-c listen_addresses='' -c unix_socket_directories='$NEW_SOCK' -p $NEW_PORT" start > /dev/null
+		-o "-c listen_addresses='' -c unix_socket_directories='$NEW_SOCK' -p $NEW_PORT -c fsync=off -c full_page_writes=off -c synchronous_commit=off" start > /dev/null
 
 	log "Transferring roles"
 	"$NEW_BIN/pg_dumpall" -h "$OLD_SOCK" -p "$OLD_PORT" -U postgres --no-password --globals-only \
@@ -206,6 +206,9 @@ main() {
 
 	log "Stopping servers"
 	cleanup
+
+	log "Syncing to disk"
+	"$NEW_BIN/initdb" -D "$TMP_DIR" --sync-only
 
 	log "Committing"
 	mv "$TMP_DIR" "$NEW_DIR"
