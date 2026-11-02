@@ -75,13 +75,15 @@ on_error() {
 	cleanup
 	rm -rf "$TMP_DIR"
 	echo ""
-	echo "UPGRADE FAILED. The original PostgreSQL 9.5 database has not been modified."
+	echo "UPGRADE FAILED. An untouched copy of the PostgreSQL 9.5 database is kept in the database volume at backup-9.5."
 	echo "The full log is in the database volume at upgrade.log"
 	echo ""
 	echo "The upgrade will be attempted again the next time the database starts."
 	echo "To go back to a previous version of WebODM in the meantime:"
-	echo "  1. Check out a 9.5 supported WebODM release (git checkout 5a0ec41e16d46d16d66187068b01ccdf6f31fe65)"
-	echo "  2. ./webodm.sh start"
+	echo "  1. Stop WebODM (./webodm.sh stop)"
+	echo "  2. In the database volume, delete everything except backup-9.5, then move the contents of backup-9.5 to the volume root"
+	echo "  3. Check out a 9.5 supported WebODM release (git checkout 5a0ec41e16d46d16d66187068b01ccdf6f31fe65)"
+	echo "  4. ./webodm.sh start"
 	exit 1
 }
 

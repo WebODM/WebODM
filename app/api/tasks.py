@@ -253,7 +253,16 @@ class TaskViewSet(viewsets.ViewSet):
         tasks = filters.OrderingFilter().filter_queryset(self.request, tasks, self)
 
         if bbox is not None:
-            tasks = [t for t in tasks if any(e is not None and bbox_intersects(bbox, polygon_bbox(e)) for e in (t.orthophoto_extent, t.dsm_extent, t.dtm_extent))]
+            def in_bbox(t):
+                for e in (t.orthophoto_extent, t.dsm_extent, t.dtm_extent):
+                    try:
+                        b = polygon_bbox(e)
+                    except Exception:
+                        b = None
+                    if b is not None and bbox_intersects(bbox, b):
+                        return True
+                return False
+            tasks = [t for t in tasks if in_bbox(t)]
         serializer = TaskSerializer(tasks, many=True)
         return Response(serializer.data)
 
@@ -632,20 +641,19 @@ class TaskThumbnail(TaskNestedView):
             if ColorInterp.alpha in ci:
                 indexes += (ci.index(ColorInterp.alpha) + 1, )
             
+            cutline = None
             if task.crop is not None:
                 cutline, (minx, miny, maxx, maxy) = geom_transform_wkt_bbox(task.crop, raster, 'raster')
-
                 w = maxx - minx
                 h = maxy - miny
-                win = rasterio.windows.Window(minx, miny, w, h)
-                ratio = w / h
-                if ratio > 1:
-                    out_width = thumb_size
-                    out_height = int(thumb_size / ratio)
-                else:
-                    out_height = thumb_size
-                    out_width = int(thumb_size * ratio)
+                if w <= 0 or h <= 0:
+                    cutline = None
 
+            if cutline is not None:
+                win = rasterio.windows.Window(minx, miny, w, h)
+                d = max(w, h)
+                out_width = max(1, round(w * thumb_size / d))
+                out_height = max(1, round(h * thumb_size / d))
 
                 with WarpedVRT(raster, cutline=cutline, nodata=0) as vrt:
                     rgb = vrt.read(indexes=indexes, window=win, fill_value=0, out_shape=(
