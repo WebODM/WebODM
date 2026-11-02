@@ -205,10 +205,10 @@ a, a:hover, a:focus{
 	--header-bg: {{ theme_header_background }};
 	--header-color: {{ theme_header_primary }};
 	--header-link-color: {{ theme_header_primary }};
-	--button-bg: {{ theme_button_primary }};
-	--button-hover-bg: {% scalebyiv theme_button_primary 0.90 %};
-	--default-button-bg: {{ theme_button_default }};
-	--default-button-hover-bg: {% scalebyiv theme_button_default 0.90 %};
+	--button-bg: {{ theme_button_default }};
+	--button-hover-bg: {% scalebyiv theme_button_default 0.90 %};
+	--default-button-bg: {{ theme_button_primary }};
+	--default-button-hover-bg: {% scalebyiv theme_button_primary 0.90 %};
 	--delete-button-bg: {{ theme_button_danger }};
 	--delete-button-hover-bg: {% scalebyiv theme_button_danger 0.90 %};
 	--link-fg: {{ theme_primary }};
