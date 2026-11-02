@@ -295,7 +295,7 @@ class SrtFileParser:
                     continue
 
                 # Search this "00:00:00,000 --> 00:00:00,016"
-                match = re.search("(\d{2}:\d{2}:\d{2},\d+) --> (\d{2}:\d{2}:\d{2},\d+)", line)
+                match = re.search(r"(\d{2}:\d{2}:\d{2},\d+) --> (\d{2}:\d{2}:\d{2},\d+)", line)
                 if match:
                     start = datetime.strptime(match.group(1), "%H:%M:%S,%f")
                     end = datetime.strptime(match.group(2), "%H:%M:%S,%f")
@@ -310,41 +310,41 @@ class SrtFileParser:
                         return None
 
                 iso = match_single([
-                    "iso : (\d+)",
-                    "ISO (\d+)"
+                    r"iso : (\d+)",
+                    r"ISO (\d+)"
                 ], line)
 
                 shutter = match_single([
-                    ("shutter : \d+/(\d+\.?\d*)", non_zero_float),
-                    ("SS (\d+\.?\d*)", non_zero_float)
+                    (r"shutter : \d+/(\d+\.?\d*)", non_zero_float),
+                    (r"SS (\d+\.?\d*)", non_zero_float)
                 ], line)
 
                 fnum = match_single([
-                    ("fnum : (\d+)", lambda v: float(v)/100.0),
-                    ("F/([\d\.]+)", float),
+                    (r"fnum : (\d+)", lambda v: float(v)/100.0),
+                    (r"F/([\d\.]+)", float),
                 ], line)
 
-                focal_len = match_single("focal_len : (\d+)", line)
+                focal_len = match_single(r"focal_len : (\d+)", line)
 
                 latitude = match_single([
-                    ("latitude: ([\d\.\-]+)", non_zero_float),
-                    ("latitude : ([\d\.\-]+)", non_zero_float),
-                    ("GPS \([\d\.\-]+,? ([\d\.\-]+),? [\d\.\-]+\)", non_zero_float),
-                    ("RTK \([-+]?\d+\.\d+, (-?\d+\.\d+), [\d\.\-]+\)", non_zero_float),
+                    (r"latitude: ([\d\.\-]+)", non_zero_float),
+                    (r"latitude : ([\d\.\-]+)", non_zero_float),
+                    (r"GPS \([\d\.\-]+,? ([\d\.\-]+),? [\d\.\-]+\)", non_zero_float),
+                    (r"RTK \([-+]?\d+\.\d+, (-?\d+\.\d+), [\d\.\-]+\)", non_zero_float),
                 ], line)
                 
                 longitude = match_single([
-                    ("longitude: ([\d\.\-]+)", non_zero_float),
-                    ("longtitude : ([\d\.\-]+)", non_zero_float),
-                    ("GPS \(([\d\.\-]+),? [\d\.\-]+,? [\d\.\-]+\)", non_zero_float),
-                    ("RTK \((-?\d+\.\d+), [-+]?\d+\.\d+, [\d\.\-]+\)", non_zero_float),
+                    (r"longitude: ([\d\.\-]+)", non_zero_float),
+                    (r"longtitude : ([\d\.\-]+)", non_zero_float),
+                    (r"GPS \(([\d\.\-]+),? [\d\.\-]+,? [\d\.\-]+\)", non_zero_float),
+                    (r"RTK \((-?\d+\.\d+), [-+]?\d+\.\d+, [\d\.\-]+\)", non_zero_float),
                 ], line)
                 
                 altitude = match_single([
-                    ("altitude: ([\d\.\-]+)", non_zero_float),
-                    ("GPS \([\d\.\-]+,? [\d\.\-]+,? ([\d\.\-]+)\)", non_zero_float),
-                    ("RTK \([-+]?\d+\.\d+, [-+]?\d+\.\d+, ([\d\.\-]+)\)", non_zero_float),
-                    ("abs_alt: ([\d\.\-]+)", non_zero_float),
+                    (r"altitude: ([\d\.\-]+)", non_zero_float),
+                    (r"GPS \([\d\.\-]+,? [\d\.\-]+,? ([\d\.\-]+)\)", non_zero_float),
+                    (r"RTK \([-+]?\d+\.\d+, [-+]?\d+\.\d+, ([\d\.\-]+)\)", non_zero_float),
+                    (r"abs_alt: ([\d\.\-]+)", non_zero_float),
                 ], line)
 
 def extract_gps_from_srt(srt_path):
