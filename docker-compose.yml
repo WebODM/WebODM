@@ -38,9 +38,9 @@ services:
     restart: unless-stopped
     oom_score_adj: 0
   broker:
-    image: redis:8.2-alpine
+    image: valkey/valkey:9.1-alpine
     container_name: broker
-    command: redis-server --loglevel warning
+    command: valkey-server --loglevel warning
     restart: unless-stopped
     oom_score_adj: -500
   worker:

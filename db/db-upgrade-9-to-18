@@ -18,33 +18,29 @@ NEW_SOCK=/var/run/postgresql/upgrade-new
 OLD_PORT=5432
 NEW_PORT=5433
 
-log() {
-	echo "[db-upgrade-9-to-18] $*"
-}
-
 box() {
 	local w=58 pad=$(( (58 - ${#1}) / 2 ))
-	log "$(printf "|%*s%s%*s|" "$pad" "" "$1" "$((w - pad - ${#1}))" "")"
+	printf "|%*s%s%*s|\n" "$pad" "" "$1" "$((w - pad - ${#1}))" ""
 }
 
 if [ -s "$NEW_DIR/PG_VERSION" ]; then
-	log "Database is already at PostgreSQL $(cat "$NEW_DIR/PG_VERSION"), nothing to do"
+	echo "Database is already at PostgreSQL $(cat "$NEW_DIR/PG_VERSION"), nothing to do"
 	exit 0
 fi
 
 if [ ! -s "$VOLUME_DIR/PG_VERSION" ]; then
-	log "No existing database found, nothing to upgrade"
+	echo "No existing database found, nothing to upgrade"
 	exit 0
 fi
 
 OLD_VERSION=$(cat "$VOLUME_DIR/PG_VERSION")
 if [ "$OLD_VERSION" != "9.5" ]; then
-	log "Found a PostgreSQL $OLD_VERSION database, but only upgrades from 9.5 are supported"
+	echo "Found a PostgreSQL $OLD_VERSION database, but only upgrades from 9.5 are supported"
 	exit 1
 fi
 
 if [ "$1" = "--check" ]; then
-	log "PostgreSQL $OLD_VERSION database found, upgrade to $NEW_MAJOR required"
+	echo "PostgreSQL $OLD_VERSION database found, upgrade to $NEW_MAJOR required"
 	exit 3
 fi
 
@@ -78,14 +74,14 @@ cleanup() {
 on_error() {
 	cleanup
 	rm -rf "$TMP_DIR"
-	log ""
-	log "UPGRADE FAILED. The original PostgreSQL 9.5 database has not been modified."
-	log "The full log is in the database volume at upgrade.log"
-	log ""
-	log "The upgrade will be attempted again the next time the database starts."
-	log "To go back to a previous version of WebODM in the meantime:"
-	log "  1. Check out a 9.5 supported WebODM release (git checkout 5a0ec41e16d46d16d66187068b01ccdf6f31fe65)"
-	log "  2. ./webodm.sh start"
+	echo ""
+	echo "UPGRADE FAILED. The original PostgreSQL 9.5 database has not been modified."
+	echo "The full log is in the database volume at upgrade.log"
+	echo ""
+	echo "The upgrade will be attempted again the next time the database starts."
+	echo "To go back to a previous version of WebODM in the meantime:"
+	echo "  1. Check out a 9.5 supported WebODM release (git checkout 5a0ec41e16d46d16d66187068b01ccdf6f31fe65)"
+	echo "  2. ./webodm.sh start"
 	exit 1
 }
 
@@ -137,7 +133,7 @@ EOSQL
 main() {
 	trap on_error ERR
 
-	log "+----------------------------------------------------------+"
+	echo "+----------------------------------------------------------+"
 	box ""
 	box "Upgrading PostgreSQL $OLD_VERSION to $NEW_MAJOR"
 	box ""
@@ -145,8 +141,8 @@ main() {
 	box ""
 	box "DO NOT INTERRUPT THE PROCESS!"
 	box ""
-	log "+----------------------------------------------------------+"
-	log "Started $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+	echo "+----------------------------------------------------------+"
+	echo "Started $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
 
 	cleanup
 	rm -rf "$TMP_DIR"
@@ -159,16 +155,16 @@ main() {
 	else
 		need_kb=$((old_kb * 3))
 	fi
-	log "Database size: $((old_kb / 1024)) MB, free space: $((avail_kb / 1024)) MB, required: $((need_kb / 1024)) MB"
+	echo "Database size: $((old_kb / 1024)) MB, free space: $((avail_kb / 1024)) MB, required: $((need_kb / 1024)) MB"
 	if [ "$avail_kb" -lt "$need_kb" ]; then
-		log "Not enough free space on the database volume"
+		echo "Not enough free space on the database volume"
 		false
 	fi
 
 	if [ -s "$BACKUP_DIR/PG_VERSION" ]; then
-		log "Backup of the 9.5 database already exists in backup-9.5, reusing it"
+		echo "Backup of the 9.5 database already exists in backup-9.5, reusing it"
 	else
-		log "Copying the 9.5 database to backup-9.5"
+		echo "Copying the 9.5 database to backup-9.5"
 		rm -rf "$BACKUP_DIR.tmp"
 		mkdir -m 700 "$BACKUP_DIR.tmp"
 		old_entries -print0 | xargs -0 cp -a -t "$BACKUP_DIR.tmp"
@@ -176,7 +172,7 @@ main() {
 		mv "$BACKUP_DIR.tmp" "$BACKUP_DIR"
 	fi
 
-	log "Starting PostgreSQL $OLD_VERSION"
+	echo "Starting PostgreSQL $OLD_VERSION"
 	rm -f "$VOLUME_DIR/postmaster.pid"
 	"$OLD_BIN/pg_ctl" -D "$VOLUME_DIR" -w -t 600 \
 		-o "-c listen_addresses='' -c unix_socket_directories='$OLD_SOCK' -p $OLD_PORT" start
@@ -186,25 +182,25 @@ main() {
 	for db in $dbs; do
 		has_postgis=$(old_psql -At -d "$db" -c "SELECT 1 FROM pg_extension WHERE extname = 'postgis'")
 		if [ "$has_postgis" = "1" ]; then
-			log "Converting PostGIS geometries to GeoJSON in database $db"
+			echo "Converting PostGIS geometries to GeoJSON in database $db"
 			drop_postgis "$db"
 		fi
 	done
 
-	log "Initializing PostgreSQL $NEW_MAJOR cluster"
+	echo "Initializing PostgreSQL $NEW_MAJOR cluster"
 	mkdir -m 700 "$TMP_DIR"
 	"$NEW_BIN/initdb" -D "$TMP_DIR" --username=postgres --pwfile=<(echo "$POSTGRES_PASSWORD") --encoding=UTF8 --locale=en_US.UTF-8 --no-sync > /dev/null
 	echo "host all all $POSTGRES_ALLOW_HOST $POSTGRES_HOST_AUTH_METHOD" >> "$TMP_DIR/pg_hba.conf"
 	"$NEW_BIN/pg_ctl" -D "$TMP_DIR" -w \
 		-o "-c listen_addresses='' -c unix_socket_directories='$NEW_SOCK' -p $NEW_PORT -c fsync=off -c full_page_writes=off -c synchronous_commit=off" start > /dev/null
 
-	log "Transferring roles"
+	echo "Transferring roles"
 	"$NEW_BIN/pg_dumpall" -h "$OLD_SOCK" -p "$OLD_PORT" -U postgres --no-password --globals-only \
 		| sed '/^CREATE ROLE postgres;$/d' \
 		| new_psql -q -d postgres > /dev/null
 
 	for db in $dbs; do
-		log "Transferring database $db"
+		echo "Transferring database $db"
 		if [ "$db" = "postgres" ]; then
 			"$NEW_BIN/pg_dump" -h "$OLD_SOCK" -p "$OLD_PORT" -U postgres --no-password "$db" \
 				| new_psql -q -d postgres > /dev/null
@@ -214,21 +210,21 @@ main() {
 		fi
 	done
 
-	log "Analyzing"
+	echo "Analyzing"
 	"$NEW_BIN/vacuumdb" -h "$NEW_SOCK" -p "$NEW_PORT" -U postgres --no-password --all --analyze-only -q
 
-	log "Stopping servers"
+	echo "Stopping servers"
 	cleanup
 
-	log "Syncing to disk"
+	echo "Syncing to disk"
 	"$NEW_BIN/initdb" -D "$TMP_DIR" --sync-only
 
-	log "Committing"
+	echo "Committing"
 	mv "$TMP_DIR" "$NEW_DIR"
 	old_entries -exec rm -rf {} +
 
-	log "Upgrade complete. The old 9.5 database is kept in backup-9.5 and can be deleted once you are satisfied with the upgrade."
-	log "Finished $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+	echo "Upgrade complete. The old 9.5 database is kept in backup-9.5 and can be deleted once you are satisfied with the upgrade."
+	echo "Finished $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
 }
 
 if [ "$(id -u)" = '0' ]; then
