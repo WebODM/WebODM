@@ -86,9 +86,9 @@ urlpatterns = [
     re_path(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/3d/scene$', Scene.as_view()),
     re_path(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/3d/cameraview$', CameraView.as_view()),
 
-    re_path(r'workers/check/(?P<celery_task_id>.+)', CheckTask.as_view()),
-    re_path(r'workers/get/(?P<celery_task_id>.+)', GetTaskResult.as_view()),
-    re_path(r'workers/cancel/(?P<celery_task_id>.+)', CancelTask.as_view()),
+    re_path(r'workers/check/(?P<celery_task_id>.+)$', CheckTask.as_view()),
+    re_path(r'workers/get/(?P<celery_task_id>.+)$', GetTaskResult.as_view()),
+    re_path(r'workers/cancel/(?P<celery_task_id>.+)$', CancelTask.as_view()),
     
 
     re_path(r'^auth/', include('rest_framework.urls')),
@@ -103,9 +103,9 @@ urlpatterns = [
 ]
 
 if settings.ENABLE_USERS_API:
-    urlpatterns.append(re_path(r'users', UsersList.as_view()))
-    urlpatterns.append(re_path(r'groups', GroupsList.as_view()))
+    urlpatterns.append(re_path(r'users/$', UsersList.as_view()))
+    urlpatterns.append(re_path(r'groups/$', GroupsList.as_view()))
 
 if settings.EXTERNAL_AUTH_ENDPOINT != '':
-    urlpatterns.append(re_path(r'^external-token-auth/', ExternalTokenAuth.as_view()))
+    urlpatterns.append(re_path(r'^external-token-auth/$', ExternalTokenAuth.as_view()))
 
