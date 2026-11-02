@@ -270,7 +270,7 @@ class TestApp(BootTestCase):
 
         for url in admin_menu_items:
             res = c.get(url, follow=True)
-            self.assertRedirects(res, '/admin/login/?next={}'.format(url))
+            self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
 
 
     def test_default_group(self):

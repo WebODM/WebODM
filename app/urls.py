@@ -23,6 +23,7 @@ urlpatterns = [
     re_path(r'^$', app_views.index, name='index'),
     re_path(r'^welcome/$', app_views.welcome, name='welcome'),
     re_path(r'^dashboard/$', app_views.dashboard, name='dashboard'),
+    re_path(r'^logout/$', app_views.logout, name='logout'),
     re_path(r'^map/project/(?P<project_pk>[^/.]+)/task/(?P<task_pk>[^/.]+)/$', app_views.map, name='map'),
     re_path(r'^map/project/(?P<project_pk>[^/.]+)/$', app_views.map, name='map'),
     re_path(r'^3d/project/(?P<project_pk>[^/.]+)/task/(?P<task_pk>[^/.]+)/$', app_views.model_display, name='model_display'),
@@ -50,6 +51,7 @@ urlpatterns = [
     re_path(r'^i18n/', include('django.conf.urls.i18n')),
 ] + root_url_patterns()
 
+handler403 = app_views.handler403
 handler404 = app_views.handler404
 handler500 = app_views.handler500
 

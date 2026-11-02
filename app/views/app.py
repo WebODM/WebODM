@@ -1,6 +1,6 @@
 import json
 
-from django.contrib.auth import login
+from django.contrib.auth import login, logout as auth_logout
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import User
 from django.http import Http404
@@ -37,6 +37,10 @@ def index(request):
                     else settings.LOGIN_URL)
 
 @login_required
+def logout(request):
+    auth_logout(request)
+    return render(request, 'registration/logged_out.html', {'title': _('Logged out')})
+
 def dashboard(request):
     if cluster_mode():    
         if request.user.profile.cluster_id is not None and request.user.profile.cluster_id != settings.CLUSTER_ID:
@@ -184,6 +188,9 @@ def welcome(request):
                       'firstuserform': fuf
                   })
 
+
+def handler403(request, exception):
+    return render(request, '403.html', status=403)
 
 def handler404(request, exception):
     return render(request, '404.html', status=404)
