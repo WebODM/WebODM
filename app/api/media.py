@@ -84,8 +84,12 @@ class TaskMediaUpload(TaskMediaBase):
             except ValueError:
                 raise exceptions.ValidationError(detail="chunkIndex is not an int")
             
+            uuid = re.sub('[^0-9a-zA-Z-]+', "", uuid)
+            if uuid == "":
+                raise exceptions.ValidationError(detail=_("Invalid uuid"))
+
             chunk_info = {
-                'uuid': re.sub('[^0-9a-zA-Z-]+', "", uuid),
+                'uuid': uuid,
                 'chunk_index': chunk_index,
                 'byte_offset': byte_offset,
                 'total_chunk_count': total_chunk_count,

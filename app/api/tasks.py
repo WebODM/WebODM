@@ -335,8 +335,12 @@ class TaskViewSet(viewsets.ViewSet):
             except ValueError:
                 raise exceptions.ValidationError(detail="chunkIndex is not an int")
             
+            uuid = re.sub('[^0-9a-zA-Z-]+', "", uuid)
+            if uuid == "":
+                raise exceptions.ValidationError(detail=_("Invalid uuid"))
+
             chunk_info = {
-                'uuid': re.sub('[^0-9a-zA-Z-]+', "", uuid),
+                'uuid': uuid,
                 'chunk_index': chunk_index,
                 'byte_offset': byte_offset,
                 'total_chunk_count': total_chunk_count,
@@ -814,6 +818,8 @@ class TaskAssetsImport(APIView):
             except ValueError:
                 raise exceptions.ValidationError(detail="Some parameters are not integers")
             uuid = re.sub('[^0-9a-zA-Z-]+', "", uuid)
+            if uuid == "":
+                raise exceptions.ValidationError(detail=_("Invalid uuid"))
 
             tmp_upload_file = os.path.join(settings.FILE_UPLOAD_TEMP_DIR, f"{uuid}.upload")
             if os.path.isfile(tmp_upload_file) and chunk_index == 0:
@@ -962,6 +968,8 @@ class TaskExternalImportUpload(APIView):
             except ValueError:
                 raise exceptions.ValidationError(detail=_("Some parameters are not integers"))
             uuid = re.sub('[^0-9a-zA-Z-]+', "", uuid)
+            if uuid == "":
+                raise exceptions.ValidationError(detail=_("Invalid uuid"))
 
             tmp_upload_file = os.path.join(tmp_upload_dir, f"{uuid}.upload")
             if os.path.isfile(tmp_upload_file) and chunk_index == 0:
