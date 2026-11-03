@@ -26,3 +26,5 @@ redis==8.1.0
 requests>=2.21.0
 scipy==1.18.1
 zipstream-ng==1.9.3
+whitenoise==6.12.0 ; sys_platform == "win32"
+https://github.com/WebODM/WebODM/releases/download/v3.3.2/gdal-3.13.3-cp314-cp314-win_amd64.whl ; sys_platform == "win32"
