@@ -198,7 +198,7 @@ main() {
 
 	echo "Transferring roles"
 	"$NEW_BIN/pg_dumpall" -h "$OLD_SOCK" -p "$OLD_PORT" -U postgres --no-password --globals-only \
-		| sed '/^CREATE ROLE postgres;$/d' \
+		| sed -e '/^CREATE ROLE postgres;$/d' -e "s/^\(ALTER ROLE postgres WITH .*\) PASSWORD '[^']*'/\1/" \
 		| new_psql -q -d postgres > /dev/null
 
 	for db in $dbs; do
