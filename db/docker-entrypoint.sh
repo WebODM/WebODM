@@ -43,7 +43,7 @@ if [ "$1" = 'postgres' ]; then
 	if [ ! -s "$PGDATA/PG_VERSION" ]; then
 		init_cluster
 	else
-		echo "PostgreSQL $PG_MAJOR database directory appears to contain a database; Skipping initialization"
+		echo "PostgreSQL $PG_MAJOR database directory contains a database"
 	fi
 	chmod 700 "$PGDATA" || :
 
