@@ -1,6 +1,10 @@
 .leaflet-control-contours{
   z-index: 999 !important;
 
+  &:has(.open){
+    z-index: 1000 !important;
+  }
+
   a.leaflet-control-contours-button{
     background: url(icon.svg) no-repeat 0 0;
     background-size: 26px 26px;
