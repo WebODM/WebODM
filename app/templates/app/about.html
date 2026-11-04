@@ -3,9 +3,10 @@
 
 {% block content %}
 {% theme "header_background" as theme_header_background %}
+{% is_desktop_mode as desktop_mode %}
 
 <style>
-#about-scene{position:fixed;top:50px;left:0;right:0;bottom:0;overflow:hidden}
+#about-scene{position:fixed;top:{% if desktop_mode %}1px{% else %}50px{% endif %};left:0;right:0;bottom:0;overflow:hidden}
 @media(min-width:768px){#about-scene{left:251px}}
 #about-scene canvas{display:block;width:100%;height:100%}
 #about-panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:480px;max-width:calc(100% - 32px);height:300px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;padding:14px 20px;border-radius:12px;background:rgba(255,255,255,0.6);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 8px 32px rgba(40,70,90,0.15);color:#2b3a42;text-align:center;overflow:hidden;transition:width .25s,height .25s,padding .25s,left .25s,top .25s,transform .25s}
