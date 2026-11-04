@@ -45,8 +45,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get install -y --no-install-recommends curl ca-certificates gnupg cmake g++
     curl -fsSL 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xf23c5a6cf475977595c89f51ba6932366a755776' | gpg --dearmor -o /etc/apt/trusted.gpg.d/deadsnakes.gpg
     echo "deb http://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu $RELEASE_CODENAME main" > /etc/apt/sources.list.d/deadsnakes.list
-    curl -fsSL 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x6b827c12c2d425e227edca75089ebe08314df160' | gpg --dearmor -o /etc/apt/trusted.gpg.d/ubuntugis.gpg
-    echo "deb http://ppa.launchpadcontent.net/ubuntugis/ubuntugis-unstable/ubuntu $RELEASE_CODENAME main" > /etc/apt/sources.list.d/ubuntugis.list
     # Node.js deb source
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/nodesource.gpg
     echo "deb https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" > /etc/apt/sources.list.d/nodesource.list
@@ -58,14 +56,24 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update
     # Install common deps, starting with NodeJS
     apt-get -qq install -y nodejs
-    # Python, GDAL, PDAL, nginx, letsencrypt, psql
+    # Python, GDAL, nginx, letsencrypt, psql
     apt-get install -y --no-install-recommends \
-        python$PYTHON_VERSION python$PYTHON_VERSION-venv python$PYTHON_VERSION-dev build-essential git libproj-dev proj-bin gdal-bin pdal libpdal-dev \
-        libgdal-dev nginx certbot gettext-base cron postgresql-client gettext tzdata
+        python$PYTHON_VERSION python$PYTHON_VERSION-venv python$PYTHON_VERSION-dev build-essential git libproj-dev proj-bin gdal-bin \
+        libgdal-dev libgeotiff-dev libcurl4-openssl-dev libxml2-dev zlib1g-dev nginx certbot gettext-base cron postgresql-client gettext tzdata
     # Create virtualenv
     python$PYTHON_VERSION -m venv $WORKDIR/venv
+    # Build PDAL
+    mkdir -p /staging/pdal && cd /staging/pdal
+    curl -fsSL -o pdal.tar.gz https://github.com/PDAL/PDAL/releases/download/2.6.2/PDAL-2.6.2-src.tar.gz
+    echo "9d532d745339cd793fbcab49ca56f05eb66779b8bd3e9f5c188c0238fee87d21  pdal.tar.gz" | sha256sum -c
+    tar -xzf pdal.tar.gz --strip-components=1
+    mkdir build && cd build
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DWITH_TESTS=OFF -DWITH_COMPLETION=OFF -DCMAKE_INSTALL_PREFIX=/usr/local
+    make -j$(nproc)
+    make install
+    rm -rf /staging/pdal
     # Build entwine
-    mkdir /staging && cd /staging
+    cd /staging
     git clone -b webodm https://github.com/WebODM/entwine && cd entwine
     mkdir build && cd build
     cmake .. -DWITH_TESTS=OFF -DWITH_ZSTD=OFF -DCMAKE_INSTALL_PREFIX=/staging/entwine/build/install
@@ -143,8 +151,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get install -y --no-install-recommends curl ca-certificates gnupg
     curl -fsSL 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xf23c5a6cf475977595c89f51ba6932366a755776' | gpg --dearmor -o /etc/apt/trusted.gpg.d/deadsnakes.gpg
     echo "deb http://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu $RELEASE_CODENAME main" > /etc/apt/sources.list.d/deadsnakes.list
-    curl -fsSL 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x6b827c12c2d425e227edca75089ebe08314df160' | gpg --dearmor -o /etc/apt/trusted.gpg.d/ubuntugis.gpg
-    echo "deb http://ppa.launchpadcontent.net/ubuntugis/ubuntugis-unstable/ubuntu $RELEASE_CODENAME main" > /etc/apt/sources.list.d/ubuntugis.list
     # Node.js deb source
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/nodesource.gpg
     echo "deb https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" > /etc/apt/sources.list.d/nodesource.list
@@ -156,9 +162,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update
     # Install common deps, starting with NodeJS
     apt-get -qq install -y nodejs
-    # Python, GDAL, PDAL, nginx, letsencrypt, psql, git, exiftool
+    # Python, GDAL, nginx, letsencrypt, psql, git, exiftool
     apt-get install -y --no-install-recommends \
-        python$PYTHON_VERSION gdal-bin pdal \
+        python$PYTHON_VERSION gdal-bin \
         nginx certbot logrotate gettext-base cron postgresql-client gettext tzdata git exiftool
     # Install webpack, webpack CLI
     npm install -g webpack@5.89.0 webpack-cli@5.1.4
@@ -172,6 +178,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     rm -rf /tmp/* /var/tmp/*
 EOT
 
+COPY --from=build /usr/local/bin/pdal /usr/bin/pdal
+COPY --from=build /usr/local/lib/libpdal* /usr/lib/
 COPY --from=build /staging/entwine/build/install/bin/entwine /usr/bin/entwine
 COPY --from=build /staging/entwine/build/install/lib/libentwine* /usr/lib/
 COPY --from=build /usr/bin/ffmpeg /usr/bin/ffmpeg
