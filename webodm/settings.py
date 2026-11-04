@@ -239,6 +239,9 @@ LOGGING = {
             'handlers': ['console'],
             'level': 'INFO',
         },
+        'gunicorn.http.wsgi': {
+            'level': 'ERROR',
+        },
     }
 }
 
