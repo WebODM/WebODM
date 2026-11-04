@@ -105,7 +105,8 @@ body,
 
 
 /* Tertiary */
-a, a:hover, a:focus{
+a, a:hover, a:focus,
+.sharePopup a:link, .sharePopup a:visited{
 	color: {{ theme_tertiary }};
 }
 .progress-bar-success{
