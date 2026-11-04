@@ -101,7 +101,7 @@ def settings_image_url(context, image):
         return ''
 
     try:
-        return "/media/" + img_cache.url
+        return img_cache.url
     except FileNotFoundError:
         logger.warning("Cannot get %s, this could mean the image was deleted." % image)
         return ''

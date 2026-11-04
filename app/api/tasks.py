@@ -19,7 +19,6 @@ from django.db import transaction
 from django.http import FileResponse
 from django.http import HttpResponse
 from django.http import StreamingHttpResponse
-from django.contrib.gis.geos import Polygon
 from zipstream.ng import ZipStream
 from rest_framework import status, serializers, viewsets, filters, exceptions, permissions, parsers
 from rest_framework.decorators import action
@@ -37,7 +36,7 @@ from .tags import TagsField
 from app.security import path_traversal_check
 from django.utils.translation import gettext_lazy as _
 from .fields import PolygonGeometryField
-from app.geoutils import geom_transform_wkt_bbox, get_srs_name_units_from_epsg_or_wkt, get_rtc_offset
+from app.geoutils import geom_transform_wkt_bbox, get_srs_name_units_from_epsg_or_wkt, get_rtc_offset, polygon_bbox, bbox_intersects
 from webodm import settings
 
 def flatten_files(request_files):
@@ -244,17 +243,26 @@ class TaskViewSet(viewsets.ViewSet):
         bbox = request.query_params.get('bbox')
         if bbox is not None:
             try:
-                xmin, ymin, xmax, ymax = [float(v) for v in bbox.split(",")]
+                bbox = [float(v) for v in bbox.split(",")]
+                if len(bbox) != 4:
+                    raise ValueError()
             except:
                 raise exceptions.ValidationError("Invalid bbox parameter")   
 
-            geom = Polygon.from_bbox((xmin, ymin, xmax, ymax))
-            query &= Q(orthophoto_extent__intersects=geom) | \
-                     Q(dsm_extent__intersects=geom) | \
-                     Q(dtm_extent__intersects=geom)
-
         tasks = self.queryset.filter(query)
         tasks = filters.OrderingFilter().filter_queryset(self.request, tasks, self)
+
+        if bbox is not None:
+            def in_bbox(t):
+                for e in (t.orthophoto_extent, t.dsm_extent, t.dtm_extent):
+                    try:
+                        b = polygon_bbox(e)
+                    except Exception:
+                        b = None
+                    if b is not None and bbox_intersects(bbox, b):
+                        return True
+                return False
+            tasks = [t for t in tasks if in_bbox(t)]
         serializer = TaskSerializer(tasks, many=True)
         return Response(serializer.data)
 
@@ -327,8 +335,12 @@ class TaskViewSet(viewsets.ViewSet):
             except ValueError:
                 raise exceptions.ValidationError(detail="chunkIndex is not an int")
             
+            uuid = re.sub('[^0-9a-zA-Z-]+', "", uuid)
+            if uuid == "":
+                raise exceptions.ValidationError(detail=_("Invalid uuid"))
+
             chunk_info = {
-                'uuid': re.sub('[^0-9a-zA-Z-]+', "", uuid),
+                'uuid': uuid,
                 'chunk_index': chunk_index,
                 'byte_offset': byte_offset,
                 'total_chunk_count': total_chunk_count,
@@ -633,20 +645,19 @@ class TaskThumbnail(TaskNestedView):
             if ColorInterp.alpha in ci:
                 indexes += (ci.index(ColorInterp.alpha) + 1, )
             
+            cutline = None
             if task.crop is not None:
                 cutline, (minx, miny, maxx, maxy) = geom_transform_wkt_bbox(task.crop, raster, 'raster')
-
                 w = maxx - minx
                 h = maxy - miny
-                win = rasterio.windows.Window(minx, miny, w, h)
-                ratio = w / h
-                if ratio > 1:
-                    out_width = thumb_size
-                    out_height = int(thumb_size / ratio)
-                else:
-                    out_height = thumb_size
-                    out_width = int(thumb_size * ratio)
+                if w <= 0 or h <= 0:
+                    cutline = None
 
+            if cutline is not None:
+                win = rasterio.windows.Window(minx, miny, w, h)
+                d = max(w, h)
+                out_width = max(1, round(w * thumb_size / d))
+                out_height = max(1, round(h * thumb_size / d))
 
                 with WarpedVRT(raster, cutline=cutline, nodata=0) as vrt:
                     rgb = vrt.read(indexes=indexes, window=win, fill_value=0, out_shape=(
@@ -654,26 +665,25 @@ class TaskThumbnail(TaskNestedView):
                         out_height,
                         out_width,
                     ), resampling=rasterio.enums.Resampling.nearest)
-                img = np.zeros((len(indexes), thumb_size, thumb_size), dtype=rgb.dtype)
-                y_offset = (thumb_size - out_height) // 2
-                x_offset = (thumb_size - out_width) // 2
-
-                # Place the output image in the center
-                img[:, y_offset:y_offset + out_height, x_offset:x_offset + out_width] = rgb
             else:
                 w = raster.width
                 h = raster.height
                 d = max(w, h)
-                dw = (d - w) // 2
-                dh = (d - h) // 2
-                win = rasterio.windows.Window(-dw, -dh, d, d)
+                out_width = max(1, round(w * thumb_size / d))
+                out_height = max(1, round(h * thumb_size / d))
 
-                img = raster.read(indexes=indexes, window=win, boundless=True, fill_value=0, out_shape=(
+                rgb = raster.read(indexes=indexes, out_shape=(
                     len(indexes),
-                    thumb_size,
-                    thumb_size,
+                    out_height,
+                    out_width,
                 ), resampling=rasterio.enums.Resampling.nearest)
 
+            img = np.zeros((len(indexes), thumb_size, thumb_size), dtype=rgb.dtype)
+            y_offset = (thumb_size - out_height) // 2
+            x_offset = (thumb_size - out_width) // 2
+
+            # Place the output image in the center
+            img[:, y_offset:y_offset + out_height, x_offset:x_offset + out_width] = rgb
             img = img.transpose((1, 2, 0))
 
         if img.dtype != np.uint8:
@@ -808,6 +818,8 @@ class TaskAssetsImport(APIView):
             except ValueError:
                 raise exceptions.ValidationError(detail="Some parameters are not integers")
             uuid = re.sub('[^0-9a-zA-Z-]+', "", uuid)
+            if uuid == "":
+                raise exceptions.ValidationError(detail=_("Invalid uuid"))
 
             tmp_upload_file = os.path.join(settings.FILE_UPLOAD_TEMP_DIR, f"{uuid}.upload")
             if os.path.isfile(tmp_upload_file) and chunk_index == 0:
@@ -956,6 +968,8 @@ class TaskExternalImportUpload(APIView):
             except ValueError:
                 raise exceptions.ValidationError(detail=_("Some parameters are not integers"))
             uuid = re.sub('[^0-9a-zA-Z-]+', "", uuid)
+            if uuid == "":
+                raise exceptions.ValidationError(detail=_("Invalid uuid"))
 
             tmp_upload_file = os.path.join(tmp_upload_dir, f"{uuid}.upload")
             if os.path.isfile(tmp_upload_file) and chunk_index == 0:

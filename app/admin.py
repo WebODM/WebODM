@@ -5,11 +5,12 @@ import zipfile
 import shutil
 import hashlib
 
-from django.conf.urls import url
+from django.urls import re_path
 from django.contrib import admin
 from django.contrib import messages
 from django.contrib.admin.widgets import AdminFileWidget
 from django.core.files import File
+from app.geoutils import polygon_to_wkt
 from django.http import HttpResponseRedirect, JsonResponse
 from django.urls import reverse
 from django.utils.html import format_html
@@ -27,7 +28,6 @@ from app.plugins import get_plugin_by_name, enable_plugin, disable_plugin, delet
     get_plugins_persistent_path, clear_plugins_cache, init_plugins, get_plugins
 from .models import Project, Task, Setting, Theme
 from django import forms
-from codemirror2.widgets import CodeMirrorEditor
 from webodm import settings
 from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.utils.translation import gettext_lazy as _, gettext
@@ -53,24 +53,16 @@ class TaskAdmin(admin.ModelAdmin):
     readonly_fields = ('orthophoto_extent_wkt', 'dsm_extent_wkt', 'dtm_extent_wkt', 'crop_wkt', )
 
     def orthophoto_extent_wkt(self, obj):
-        if obj.orthophoto_extent:
-            return obj.orthophoto_extent.wkt
-        return None
+        return polygon_to_wkt(obj.orthophoto_extent)
     
     def dsm_extent_wkt(self, obj):
-        if obj.dsm_extent:
-            return obj.dsm_extent.wkt
-        return None
+        return polygon_to_wkt(obj.dsm_extent)
     
     def dtm_extent_wkt(self, obj):
-        if obj.dtm_extent:
-            return obj.dtm_extent.wkt
-        return None
+        return polygon_to_wkt(obj.dtm_extent)
     
     def crop_wkt(self, obj):
-        if obj.crop:
-            return obj.crop.wkt
-        return None
+        return polygon_to_wkt(obj.crop)
 
 admin.site.register(Task, TaskAdmin)
 
@@ -117,12 +109,12 @@ class SettingAdmin(admin.ModelAdmin):
         if not obj or not obj.app_logo:
             return '-'
 
-        logo_url = '/media/{}'.format(obj.app_logo.url)
-        return format_html(f'<img src="{logo_url}" style="position: relative; left: -9px; max-height: 64px; padding: 4px; background: {obj.theme.header_background};"/>')
+        logo_url = obj.app_logo.url
+        return format_html(f'<img src="{logo_url}" style="max-height: 64px; padding: 4px; background: {obj.theme.header_background};"/>')
 
     def restore_default_logo(self, obj):
         return format_html(
-            '<button type="submit" style="padding: 6px; position: relative; left: -9px;" class="button" name="_restore_default_logo" value="1">{}</button>',
+            '<button type="submit" style="padding: 6px;" class="button" name="_restore_default_logo" value="1">{}</button>',
             _('Restore Default')
         )
 
@@ -148,24 +140,24 @@ class ThemeModelForm(forms.ModelForm):
     css = forms.CharField(help_text=_("Enter custom CSS"),
                           label=_("CSS"),
                           required=False,
-                          widget=CodeMirrorEditor(options={'mode': 'css', 'lineNumbers': True}))
+                          widget=forms.Textarea)
     html_before_header = forms.CharField(help_text=_("HTML that will be displayed above site header"),
                                          label=_("HTML (before header)"),
                                          required=False,
-                                         widget=CodeMirrorEditor(options={'mode': 'xml', 'lineNumbers': True}))
+                                         widget=forms.Textarea)
     html_after_header = forms.CharField(help_text=_("HTML that will be displayed after site header"),
                                         label=_("HTML (after header)"),
                                         required=False,
-                                        widget=CodeMirrorEditor(options={'mode': 'xml', 'lineNumbers': True}))
+                                        widget=forms.Textarea)
     html_after_body = forms.CharField(help_text=_("HTML that will be displayed after the body tag"),
                                       label=_("HTML (after body)"),
                                       required=False,
-                                      widget=CodeMirrorEditor(options={'mode': 'xml', 'lineNumbers': True}))
+                                      widget=forms.Textarea)
     html_footer = forms.CharField(help_text=_(
         "HTML that will be displayed in the footer. You can also use the special tags such as {ORGANIZATION} and {YEAR}."),
         label=_("HTML (footer)"),
         required=False,
-        widget=CodeMirrorEditor(options={'mode': 'xml', 'lineNumbers': True}))
+        widget=forms.Textarea)
 
     class Meta:
         model = Theme
@@ -250,22 +242,22 @@ class PluginAdmin(admin.ModelAdmin):
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
-            url(
+            re_path(
                 r'^(?P<plugin_name>.+)/enable/$',
                 self.admin_site.admin_view(self.plugin_enable),
                 name='plugin-enable',
             ),
-            url(
+            re_path(
                 r'^(?P<plugin_name>.+)/disable/$',
                 self.admin_site.admin_view(self.plugin_disable),
                 name='plugin-disable',
             ),
-            url(
+            re_path(
                 r'^(?P<plugin_name>.+)/delete/$',
                 self.admin_site.admin_view(self.plugin_delete),
                 name='plugin-delete',
             ),
-            url(
+            re_path(
                 r'^actions/upload/$',
                 self.admin_site.admin_view(self.plugin_upload),
                 name='plugin-upload',

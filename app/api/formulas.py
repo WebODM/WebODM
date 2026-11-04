@@ -181,7 +181,7 @@ def lookup_formula(algo, band_order = 'RGB'):
         except ValueError:
             raise ValueError("Cannot find band \"" + b + "\" from \"" + band_order + "\". Choose a proper band order.")
 
-    expr = re.sub("([A-Z]+?[a-z]*)", repl, re.sub("\s+", "", algos[algo]['expr']))
+    expr = re.sub("([A-Z]+?[a-z]*)", repl, re.sub(r"\s+", "", algos[algo]['expr']))
     hrange = algos[algo].get('range', None)
 
     return expr, hrange

@@ -2,7 +2,6 @@
 # a default processing node instance. This is best for users
 # who are just getting started with WebODM.
 
-version: '2.1'
 services:
   webapp:
     depends_on:
@@ -10,16 +9,9 @@ services:
     environment:
       - WO_DEFAULT_NODES
   node-odx-1:
-    image: webodm/nodeodx:gpu
+    image: webodm/nodeodx
     container_name: node-odx-1
     expose:
       - "3000"
     restart: unless-stopped
     oom_score_adj: 500
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]

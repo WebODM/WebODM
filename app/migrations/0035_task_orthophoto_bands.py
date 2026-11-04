@@ -2,7 +2,7 @@
 
 import rasterio
 import os
-import django.contrib.postgres.fields.jsonb
+import django.db.models
 from django.db import migrations
 from webodm import settings
 
@@ -37,7 +37,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='task',
             name='orthophoto_bands',
-            field=django.contrib.postgres.fields.jsonb.JSONField(blank=True, default=list, help_text='List of orthophoto bands', verbose_name='Orthophoto Bands'),
+            field=django.db.models.JSONField(blank=True, default=list, help_text='List of orthophoto bands', verbose_name='Orthophoto Bands'),
         ),
 
         migrations.RunPython(update_orthophoto_bands_fields),

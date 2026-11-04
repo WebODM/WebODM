@@ -6,10 +6,12 @@ host="$1"
 shift
 cmd="$@"
 
-until psql -h "$host" -U "postgres" -c '\q'; do
-  >&2 echo "Postgres is unavailable - sleeping"
-  sleep 1
-done
+if ! psql -h "$host" -U "postgres" -c '\q' >/dev/null 2>&1; then
+  >&2 echo "Waiting for Postgres..."
+  until psql -h "$host" -U "postgres" -c '\q' >/dev/null 2>&1; do
+    sleep 1
+  done
+fi
 
->&2 echo "Postgres is up - executing command"
+>&2 echo "Postgres is up"
 exec $cmd

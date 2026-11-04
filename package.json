@@ -1,6 +1,6 @@
 {
   "name": "WebODM",
-  "version": "3.3.2",
+  "version": "4.0.0",
   "description": "User-friendly, commercial-grade software for processing aerial imagery.",
   "main": "index.js",
   "scripts": {

@@ -1,4 +1,3 @@
-version: '2.2'
 services:
   worker:
     cpus: ${WO_WORKER_CPUS}

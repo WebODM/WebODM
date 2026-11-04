@@ -1,6 +1,6 @@
 import json
 
-from django.contrib.auth import login
+from django.contrib.auth import login, logout as auth_logout
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import User
 from django.http import Http404
@@ -12,7 +12,7 @@ from app.models import Project, Task, Basemap
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.utils.html import format_html
-from django.utils.translation import ugettext as _
+from django.utils.translation import gettext as _
 from django import forms
 from app.views.utils import get_permissions, get_project_or_raise, get_task_or_raise, handle_302, ResponseClusterRedirect, cluster_mode
 from webodm import settings
@@ -35,6 +35,11 @@ def index(request):
 
     return redirect(settings.LOGIN_REDIRECT_URL if request.user.is_authenticated
                     else settings.LOGIN_URL)
+
+@login_required
+def logout(request):
+    auth_logout(request)
+    return render(request, 'registration/logged_out.html', {'title': _('Logged out')})
 
 @login_required
 def dashboard(request):
@@ -184,6 +189,9 @@ def welcome(request):
                       'firstuserform': fuf
                   })
 
+
+def handler403(request, exception):
+    return render(request, '403.html', status=403)
 
 def handler404(request, exception):
     return render(request, '404.html', status=404)

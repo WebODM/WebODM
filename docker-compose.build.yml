@@ -1,6 +1,5 @@
 # This configuration builds from Dockerfiles 
 # instead of pulling from docker hub
-version: '2.1'
 services:
   db:
     build: ./db

@@ -10,14 +10,18 @@ Class-based views
     1. Add an import:  from other_app.views import Home
     2. Add a URL to urlpatterns:  url(r'^$', Home.as_view(), name='home')
 Including another URLconf
-    1. Import the include() function: from django.conf.urls import url, include
+    1. Import the include() function: from django.urls import re_path, include
     2. Add a URL to urlpatterns:  url(r'^blog/', include('blog.urls'))
 """
 import os
 
-from django.conf.urls import include, url
+from django.urls import include, re_path
 from django.urls import re_path
 from django.contrib import admin
+from django.contrib.auth.views import redirect_to_login
+from django.http import HttpResponseRedirect
+from django.shortcuts import render
+from django.urls import reverse
 from . import settings
 from django.views.static import serve
 
@@ -26,6 +30,15 @@ from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 
 admin.site.site_header = 'WebODM Administration'
+
+def admin_login(request, extra_context=None):
+    if request.user.is_authenticated:
+        if admin.site.has_permission(request):
+            return HttpResponseRedirect(reverse('admin:index'))
+        return render(request, '403.html', status=403)
+    return redirect_to_login(request.GET.get('next') or reverse('admin:index'))
+
+admin.site.login = admin_login
 
 schema_view = get_schema_view(
    openapi.Info(
@@ -40,9 +53,9 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
-    url(r'^', include('app.urls')),
-    url(r'^', include('django.contrib.auth.urls')),
-    url(r'^admin/', admin.site.urls),
+    re_path(r'^', include('app.urls')),
+    re_path(r'^', include('django.contrib.auth.urls')),
+    re_path(r'^admin/', admin.site.urls),
     re_path(r'^swagger(?P<format>\.json|\.yaml)$', schema_view.without_ui(cache_timeout=0), name='schema-json'),
     re_path(r'^swagger/$', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     re_path(r'^redoc/$', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
@@ -51,10 +64,10 @@ urlpatterns = [
 if settings.DEBUG or settings.FORCE_MEDIA_STATICFILES:
     urlpatterns += [
         # Expose imagekit generated files and settings file uploads
-        url(r'^media/CACHE/(?P<path>.*)$', serve, {
+        re_path(r'^media/CACHE/(?P<path>.*)$', serve, {
             'document_root': os.path.join(settings.MEDIA_ROOT, 'CACHE')
         }),
-        url(r'^media/settings/(?P<path>.*)$', serve, {
+        re_path(r'^media/settings/(?P<path>.*)$', serve, {
             'document_root': os.path.join(settings.MEDIA_ROOT, 'settings')
         }),
 

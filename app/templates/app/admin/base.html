@@ -9,7 +9,7 @@
 {% endblock %}
 
 {% block page-wrapper %}
-<div id="page-wrapper" class="admin-area">
+<div id="page-wrapper" class="admin-area {% if is_popup %}popup {% endif %}{% block bodyclass %}{% endblock %}">
     <!-- Content -->
     <section class="main">
         <div class="content {% block coltype %}colM{% endblock %}">
@@ -32,6 +32,7 @@
 
             {% block pretitle %}{% endblock %}
             {% block content_title %}{% if title %}<h1>{{ title }}</h1>{% endif %}{% endblock %}
+            {% block content_subtitle %}{% if subtitle %}<h2>{{ subtitle }}</h2>{% endif %}{% endblock %}
             {% block content %}
             {% block object-tools %}{% endblock %}
             {{ content }}

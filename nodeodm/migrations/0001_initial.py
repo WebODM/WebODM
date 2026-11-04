@@ -3,7 +3,7 @@
 from __future__ import unicode_literals
 
 from django.conf import settings
-import django.contrib.postgres.fields.jsonb
+import django.db.models
 from django.db import migrations, models
 import django.db.models.deletion
 
@@ -27,7 +27,7 @@ class Migration(migrations.Migration):
                 ('api_version', models.CharField(help_text='API version used by the node', max_length=32, null=True)),
                 ('last_refreshed', models.DateTimeField(help_text='When was the information about this node last retrieved?', null=True)),
                 ('queue_count', models.PositiveIntegerField(default=0, help_text='Number of tasks currently being processed by this node (as reported by the node itself)')),
-                ('available_options', django.contrib.postgres.fields.jsonb.JSONField(default={}, help_text='Description of the options that can be used for processing')),
+                ('available_options', django.db.models.JSONField(default={}, help_text='Description of the options that can be used for processing')),
             ],
         ),
         migrations.CreateModel(

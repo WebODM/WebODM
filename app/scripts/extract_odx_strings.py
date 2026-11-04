@@ -17,7 +17,7 @@ class log:
     def ODM_ERROR(s):
         pass
 
-def extract_odm_strings(url, outfile):
+def extract_odx_strings(url, outfile):
     strings = []
     print("Fetching %s ..." % url)
     res = urllib.request.urlopen(url)
@@ -63,10 +63,10 @@ def extract_odm_strings(url, outfile):
             strings.append(h)
 
     strings = list(set(strings))
-    print("Found %s ODM strings" % len(strings))
+    print("Found %s ODX strings" % len(strings))
     if len(strings) > 0:
         with open(outfile, "w") as f:
-            f.write("// Auto-generated with extract_odm_strings.py, do not edit!\n\n")
+            f.write("// Auto-generated with extract_odx_strings.py, do not edit!\n\n")
 
             for s in strings:
                 f.write("_(\"%s\");\n" % s.replace("\"", "\\\""))
@@ -77,12 +77,13 @@ def extract_odm_strings(url, outfile):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Extract ODM strings.')
+    parser = argparse.ArgumentParser(description='Extract ODX strings.')
     parser.add_argument('input', type=str,
-                        help='URL to ODM\'s config.py')
+                        help='URL to ODX\'s config.py')
     parser.add_argument('output', type=str,
                         help='Where to write resulting translation file')
     args = parser.parse_args()
 
     url = args.input
     outfile = args.output
+    extract_odx_strings(url, outfile)

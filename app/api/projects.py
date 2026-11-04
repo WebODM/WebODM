@@ -60,9 +60,9 @@ class ProjectFilter(filters.FilterSet):
 
     def filter_search(self, qs, name, value):
         value = value.replace(":", "#")
-        tag_pattern = re.compile("#[^\s]+")
+        tag_pattern = re.compile(r"#[^\s]+")
         tags = set(re.findall(tag_pattern, value))
-        user_pattern = re.compile("@[^\s]+")
+        user_pattern = re.compile(r"@[^\s]+")
         users = list(set(re.findall(user_pattern, value)))
 
         task_tags = set([t for t in tags if t.startswith("##")])
@@ -71,7 +71,7 @@ class ProjectFilter(filters.FilterSet):
         task_tags = [t.replace("##", "") for t in task_tags]
         project_tags = [t.replace("#", "") for t in project_tags]
 
-        names = re.sub("\s+", " ", re.sub(user_pattern, "", re.sub(tag_pattern, "", value))).strip()
+        names = re.sub(r"\s+", " ", re.sub(user_pattern, "", re.sub(tag_pattern, "", value))).strip()
 
         if len(users) > 0:
             qs = qs.filter(owner__username__iexact=users[0][1:])
@@ -118,10 +118,10 @@ class ProjectsPagination(PageNumberPagination):
 
 
 class ProjectViewSet(viewsets.ModelViewSet):
-    filter_fields = ('id', 'name', 'description', 'created_at')
+    filterset_fields = ('id', 'name', 'description', 'created_at')
     serializer_class = ProjectSerializer
     queryset = models.Project.objects.prefetch_related(
-        Prefetch('task_set', queryset=models.Task.objects.only('id', 'project_id'))
+        Prefetch('task_set', queryset=models.Task.objects.only('id', 'project_id', 'created_at').order_by('-created_at'))
     ).filter(deleting=False).order_by('-created_at')
     filterset_class = ProjectFilter
     ordering_fields = '__all__'

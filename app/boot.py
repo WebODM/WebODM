@@ -93,7 +93,7 @@ def boot():
             try:
                 worker_tasks.update_nodes_info.delay()
             except kombu.exceptions.OperationalError as e:
-                logger.error("Cannot connect to celery broker at {}. Make sure that your redis-server is running at that address: {}".format(settings.CELERY_BROKER_URL, str(e)))
+                logger.error("Cannot connect to celery broker at {}. Make sure that valkey is running at that address: {}".format(settings.CELERY_BROKER_URL, str(e)))
 
 
     except ProgrammingError:

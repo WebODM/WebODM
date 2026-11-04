@@ -111,7 +111,7 @@ def share_task(task_name, project_name, project, cloud_token, cloud_url, resourc
         nonlocal cloud_token
 
         try:
-            meta = jwt.decode(cloud_token, None, False)
+            meta = jwt.decode(cloud_token, options={'verify_signature': False})
             exp = meta.get('exp', time.time())
 
             # Refresh token if less than 1 hour remaining to expiry

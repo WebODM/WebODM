@@ -1,0 +1,11 @@
+{% extends "app/base.html" %}
+{% load settings i18n %}
+
+{% block page-wrapper %}
+<div style="text-align: center;">
+    <h3>{% trans '403 Forbidden' %}</h3>
+    <h5>{% trans 'You do not have permission to access this page.' %}</h5>
+</div>
+
+{{ SETTINGS.theme.html_after_header|safe }}
+{% endblock %}

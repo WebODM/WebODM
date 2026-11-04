@@ -12,6 +12,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='task',
             name='media',
-            field=django.contrib.postgres.fields.jsonb.JSONField(blank=True, default=list, help_text='List of media files associated with this task', verbose_name='Media'),
+            field=django.db.models.JSONField(blank=True, default=list, help_text='List of media files associated with this task', verbose_name='Media'),
         ),
     ]

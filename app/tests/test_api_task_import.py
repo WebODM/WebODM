@@ -288,7 +288,10 @@ class TestApiTask(BootTransactionTestCase):
             task.name = "Backup test"
             task.potree_scene = {'saved': True}
             task.public = True
+            task.crop = {"type":"Polygon","coordinates":[[[-91.99424117803576,46.84230591442068],[-91.99366182088853,46.84228940253027],[-91.99393808841705,46.84257010397711],[-91.99424117803576,46.84230591442068]]]}
             task.save()
+            task.refresh_from_db()
+            self.assertTrue(task.crop is not None)
 
             self.assertEqual(task.status, status_codes.COMPLETED)
 
@@ -332,6 +335,7 @@ class TestApiTask(BootTransactionTestCase):
             self.assertEqual(file_import_task.name, "Backup test")
             self.assertTrue('saved' in file_import_task.potree_scene)
             self.assertEqual(file_import_task.public, True)
+            self.assertEqual(file_import_task.crop, task.crop)
             
             # Can access assets
             res = client.get("/api/projects/{}/tasks/{}/assets/odm_orthophoto/odm_orthophoto.tif".format(project.id, file_import_task.id))

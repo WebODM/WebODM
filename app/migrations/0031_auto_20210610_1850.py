@@ -4,9 +4,8 @@ import app.models.task
 from app.models import image_directory_path
 import colorfield.fields
 from django.conf import settings
-import django.contrib.gis.db.models.fields
 import django.contrib.postgres.fields
-import django.contrib.postgres.fields.jsonb
+import django.db.models
 from django.db import migrations, models
 import django.db.models.deletion
 import django.utils.timezone
@@ -55,7 +54,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='task',
             name='potree_scene',
-            field=django.contrib.postgres.fields.jsonb.JSONField(blank=True, default=dict, help_text='Serialized potree scene information used to save/load measurements and camera view angle', verbose_name='Potree Scene'),
+            field=django.db.models.JSONField(blank=True, default=dict, help_text='Serialized potree scene information used to save/load measurements and camera view angle', verbose_name='Potree Scene'),
         ),
         migrations.AlterField(
             model_name='imageupload',
@@ -95,7 +94,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='plugindatum',
             name='json_value',
-            field=django.contrib.postgres.fields.jsonb.JSONField(blank=True, default=None, null=True, verbose_name='JSON value'),
+            field=django.db.models.JSONField(blank=True, default=None, null=True, verbose_name='JSON value'),
         ),
         migrations.AlterField(
             model_name='plugindatum',
@@ -125,7 +124,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='preset',
             name='options',
-            field=django.contrib.postgres.fields.jsonb.JSONField(blank=True, default=list, help_text="Options that define this preset (same format as in a Task's options).", validators=[app.models.task.validate_task_options], verbose_name='Options'),
+            field=django.db.models.JSONField(blank=True, default=list, help_text="Options that define this preset (same format as in a Task's options).", validators=[app.models.task.validate_task_options], verbose_name='Options'),
         ),
         migrations.AlterField(
             model_name='preset',
@@ -210,12 +209,12 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='task',
             name='dsm_extent',
-            field=django.contrib.gis.db.models.fields.GeometryField(blank=True, help_text='Extent of the DSM', null=True, srid=4326, verbose_name='DSM Extent'),
+            field=django.db.models.JSONField(blank=True, help_text='Extent of the DSM', null=True, verbose_name='DSM Extent'),
         ),
         migrations.AlterField(
             model_name='task',
             name='dtm_extent',
-            field=django.contrib.gis.db.models.fields.GeometryField(blank=True, help_text='Extent of the DTM', null=True, srid=4326, verbose_name='DTM Extent'),
+            field=django.db.models.JSONField(blank=True, help_text='Extent of the DTM', null=True, verbose_name='DTM Extent'),
         ),
         migrations.AlterField(
             model_name='task',
@@ -245,12 +244,12 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='task',
             name='options',
-            field=django.contrib.postgres.fields.jsonb.JSONField(blank=True, default=dict, help_text='Options that are being used to process this task', validators=[app.models.task.validate_task_options], verbose_name='Options'),
+            field=django.db.models.JSONField(blank=True, default=dict, help_text='Options that are being used to process this task', validators=[app.models.task.validate_task_options], verbose_name='Options'),
         ),
         migrations.AlterField(
             model_name='task',
             name='orthophoto_extent',
-            field=django.contrib.gis.db.models.fields.GeometryField(blank=True, help_text='Extent of the orthophoto', null=True, srid=4326, verbose_name='Orthophoto Extent'),
+            field=django.db.models.JSONField(blank=True, help_text='Extent of the orthophoto', null=True, verbose_name='Orthophoto Extent'),
         ),
         migrations.AlterField(
             model_name='task',

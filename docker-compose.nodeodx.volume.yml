@@ -1,7 +1,6 @@
 # Chaining this file to the main docker-compose file setups
 # volumes for NodeODX.
 
-version: '2.1'
 services:
   node-odx-1:
     volumes:

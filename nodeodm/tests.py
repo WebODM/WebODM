@@ -3,7 +3,6 @@ from datetime import timedelta, datetime
 
 import requests
 from django.test import TestCase
-from django.utils import six
 import time
 from django.utils import timezone
 from os import path
@@ -44,7 +43,7 @@ class TestClientApi(TestCase):
     def test_info(self):
         with start_processing_node():
             info = self.api_client.info()
-            self.assertTrue(isinstance(info.version, six.string_types), "Found version string")
+            self.assertTrue(isinstance(info.version, str), "Found version string")
             self.assertTrue(isinstance(info.task_queue_count, int), "Found task queue count")
             self.assertTrue(info.max_images is None, "Found task max images")
 
@@ -67,8 +66,8 @@ class TestClientApi(TestCase):
             self.assertTrue(online_node.api_version != "", "API version is set")
             self.assertTrue(online_node.max_images is None, "No max images limit is set")
             
-            self.assertTrue(isinstance(online_node.get_available_options_json(), six.string_types), "Available options json works")
-            self.assertTrue(isinstance(online_node.get_available_options_json(pretty=True), six.string_types), "Available options json works with pretty")
+            self.assertTrue(isinstance(online_node.get_available_options_json(), str), "Available options json works")
+            self.assertTrue(isinstance(online_node.get_available_options_json(pretty=True), str), "Available options json works with pretty")
 
 
     def test_offline_processing_node(self):

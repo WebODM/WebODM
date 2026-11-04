@@ -105,7 +105,8 @@ body,
 
 
 /* Tertiary */
-a, a:hover, a:focus{
+a, a:hover, a:focus,
+.sharePopup a:link, .sharePopup a:visited{
 	color: {{ theme_tertiary }};
 }
 .progress-bar-success{
@@ -200,6 +201,25 @@ a, a:hover, a:focus{
 /* Header background */
 #navbar-top{
 	background-color: {{ theme_header_background }};
+}
+.admin-area{
+	--header-bg: {{ theme_header_background }};
+	--header-color: {{ theme_header_primary }};
+	--header-link-color: {{ theme_header_primary }};
+	--button-bg: {{ theme_button_default }};
+	--button-hover-bg: {% scalebyiv theme_button_default 0.90 %};
+	--default-button-bg: {{ theme_button_primary }};
+	--default-button-hover-bg: {% scalebyiv theme_button_primary 0.90 %};
+	--delete-button-bg: {{ theme_button_danger }};
+	--delete-button-hover-bg: {% scalebyiv theme_button_danger 0.90 %};
+	--link-fg: {{ theme_primary }};
+	--link-hover-color: {% scalebyiv theme_primary 0.90 %};
+	--link-selected-fg: {{ theme_primary }};
+	--body-fg: {{ theme_primary }};
+	--body-bg: {{ theme_secondary }};
+	--border-color: {{ theme_border }};
+	--hairline-color: {{ theme_highlight }};
+	--darkened-bg: {{ theme_highlight }};
 }
 
 /* Header primary */

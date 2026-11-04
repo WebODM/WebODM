@@ -220,7 +220,7 @@ class TestPlugins(BootTestCase):
 
         # Cannot toggle plugins as normal user
         res = c.get('/admin/app/plugin/test/disable/', follow=True)
-        self.assertRedirects(res, '/admin/login/?next=/admin/app/plugin/test/disable/')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
 
         c.login(username='testsuperuser', password='test1234')
 
@@ -283,14 +283,14 @@ class TestPlugins(BootTestCase):
 
         # Cannot upload new plugins anonymously
         res = c.post('/admin/app/plugin/actions/upload/', {'file': plugin_file}, follow=True)
-        self.assertRedirects(res, '/admin/login/?next=/admin/app/plugin/actions/upload/')
+        self.assertRedirects(res, '/login/?next=/admin/app/plugin/actions/upload/')
         self.assertFalse(os.path.exists(get_plugins_persistent_path("testabc")))
         plugin_file.seek(0)
 
         # Cannot upload plugins as a normal user
         c.login(username='testuser', password='test1234')
         res = c.post('/admin/app/plugin/actions/upload/', {'file': plugin_file}, follow=True)
-        self.assertRedirects(res, '/admin/login/?next=/admin/app/plugin/actions/upload/')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
         self.assertFalse(os.path.exists(get_plugins_persistent_path("testabc")))
         self.assertEqual(Plugin.objects.filter(pk='testabc').count(), 0)
         plugin_file.seek(0)
@@ -366,7 +366,7 @@ class TestPlugins(BootTestCase):
         # Cannot delete plugin as normal user
         c.login(username='testuser', password='test1234')
         res = c.get('/admin/app/plugin/testabc/delete/', follow=True)
-        self.assertRedirects(res, '/admin/login/?next=/admin/app/plugin/testabc/delete/')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
 
         # Can delete plugin as admin
         c.login(username='testsuperuser', password='test1234')

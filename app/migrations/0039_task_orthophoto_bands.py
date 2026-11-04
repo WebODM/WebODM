@@ -2,7 +2,6 @@
 
 import rasterio
 import os
-import django.contrib.postgres.fields.jsonb
 from django.db import migrations
 from webodm import settings
 

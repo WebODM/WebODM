@@ -432,13 +432,13 @@ start(){
 
     if [[ $WO_DEFAULT_NODES -gt 0 ]]; then
 		if [ "${GPU_NVIDIA}" = true ]; then
-			command+=" -f docker-compose.nodeodm.gpu.nvidia.yml"
+			command+=" -f docker-compose.nodeodx.gpu.nvidia.yml"
 		else
-			command+=" -f docker-compose.nodeodm.yml"
+			command+=" -f docker-compose.nodeodx.yml"
 		fi
 
 		if [ ! -z "$WO_NODE_DIR" ]; then
-			command+=" -f docker-compose.nodeodm.volume.yml"
+			command+=" -f docker-compose.nodeodx.volume.yml"
 		fi
     fi
 
@@ -521,9 +521,9 @@ down(){
 	command="$docker_compose -f docker-compose.yml"
 
 	if [ "${GPU_NVIDIA}" = true ]; then
-		command+=" -f docker-compose.nodeodm.gpu.nvidia.yml"
+		command+=" -f docker-compose.nodeodx.gpu.nvidia.yml"
 	else
-		command+=" -f docker-compose.nodeodm.yml"
+		command+=" -f docker-compose.nodeodx.yml"
 	fi
 
 	command+=" -f docker-compose.nodemicmac.yml down --remove-orphans"
@@ -610,9 +610,9 @@ update(){
 
 	if [[ $WO_DEFAULT_NODES -gt 0 ]]; then
 		if [ "${GPU_NVIDIA}" = true ]; then
-			command+=" -f docker-compose.nodeodm.gpu.nvidia.yml"
+			command+=" -f docker-compose.nodeodx.gpu.nvidia.yml"
 		else
-			command+=" -f docker-compose.nodeodm.yml"
+			command+=" -f docker-compose.nodeodx.yml"
 		fi
 	fi
 
@@ -634,9 +634,9 @@ elif [[ $1 = "stop" ]]; then
 	command="$docker_compose -f docker-compose.yml"
 
 	if [ "${GPU_NVIDIA}" = true ]; then
-		command+=" -f docker-compose.nodeodm.gpu.nvidia.yml"
+		command+=" -f docker-compose.nodeodx.gpu.nvidia.yml"
 	else
-		command+=" -f docker-compose.nodeodm.yml"
+		command+=" -f docker-compose.nodeodx.yml"
 	fi
  
 	command+=" -f docker-compose.nodemicmac.yml stop"

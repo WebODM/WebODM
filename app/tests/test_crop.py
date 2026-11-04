@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 
 from app.models import Project, Task
 from app.tests.classes import BootTestCase
-from django.contrib.gis.geos import Polygon
+from app.geoutils import bbox_to_polygon
 
 logger = logging.getLogger('app.logger')
 
@@ -36,7 +36,7 @@ class TestCrop(BootTestCase):
         bbox[2] -= 0.0001 # Move X
         bbox[3] -= 0.0001 # Move Y
         
-        t.orthophoto_extent = Polygon.from_bbox(bbox)
+        t.orthophoto_extent = bbox_to_polygon(bbox)
         t.save()
 
         # Cannot set a self-intersecting polygon
@@ -59,7 +59,7 @@ class TestCrop(BootTestCase):
         self.assertTrue(t.crop is not None)
 
         # It should have cropped the polygon to the orthophoto boundary
-        for coord in t.crop.tuple[0]:
+        for coord in t.crop['coordinates'][0]:
             self.assertTrue(coord[0] <= bbox[2])
             self.assertTrue(coord[0] >= bbox[0])
             self.assertTrue(coord[1] <= bbox[3])
