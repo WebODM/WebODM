@@ -51,6 +51,12 @@ def polygon_ring(geom):
     except (TypeError, ValueError, IndexError):
         return None
 
+def polygon_swap_xy(geom):
+    ring = polygon_ring(geom)
+    if ring is None:
+        return geom
+    return polygon_from_ring([[y, x] for x, y in ring])
+
 def polygon_from_ring(ring):
     if len(ring) > 0 and ring[0] != ring[-1]:
         ring = ring + [ring[0]]

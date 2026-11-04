@@ -40,7 +40,7 @@ from app.grids import check_download_grid_for
 from app.pointcloud_utils import is_pointcloud_georeferenced
 from app.testwatch import testWatch
 from app.security import path_traversal_check
-from app.geoutils import geom_transform, epsg_from_wkt, get_raster_bounds_geojson, get_srs_name_units_from_epsg_or_wkt, polygon_valid, polygon_bbox, polygon_clip_bbox, polygon_area
+from app.geoutils import geom_transform, epsg_from_wkt, get_raster_bounds_geojson, get_srs_name_units_from_epsg_or_wkt, polygon_valid, polygon_bbox, polygon_clip_bbox, polygon_area, polygon_swap_xy
 from app.imageutils import extract_gps_from_image, is_panorama
 from app.video import extract_subtitles, srt_file_for_video, extract_gps_from_srt, VIDEO_EXTENSIONS as VIDEO_MOD_EXTENSIONS
 from nodeodm import status_codes
@@ -522,6 +522,7 @@ class Task(models.Model):
                 'potree_scene': self.potree_scene,
                 'tags': self.tags,
                 'crop': self.crop,
+                'version': settings.VERSION,
             }))
     
     def read_backup_file(self):
@@ -543,7 +544,10 @@ class Task(models.Model):
 
                     crop = backup.get('crop')
                     if crop is not None:
-                        self.crop = json.dumps(crop)
+                        if backup.get('version') is None:
+                            # Pre 4.0.0, backup files with crop had the coordinates swapped
+                            crop = polygon_swap_xy(crop)
+                        self.crop = crop
 
             except Exception as e:
                 logger.warning("Cannot read backup file: %s" % str(e))
