@@ -25,6 +25,7 @@ const OPTS_GROUPS = [
             { id: 'camera', name: _('Camera Configuration') },
             { id: 'masks', name: _('Masking') },
             { id: 'multispectral', name: _('Multispectral') },
+            { id: 'thermal', name: _('Thermal') },
             { id: 'video', name: _('Video Input') }
         ]
     },
@@ -144,11 +145,11 @@ const OPTION_GROUP_MAP = {
     'primary-band': { group: 'input', subgroup: 'multispectral' },
     'radiometric-calibration': { group: 'input', subgroup: 'multispectral' },
     'skip-band-alignment': { group: 'input', subgroup: 'multispectral' },
-    'thermal-distance': { group: 'input', subgroup: 'multispectral' },
-    'thermal-humidity': { group: 'input', subgroup: 'multispectral' },
-    'thermal-emissivity': { group: 'input', subgroup: 'multispectral' },
-    'thermal-ambient-temperature': { group: 'input', subgroup: 'multispectral' },
-    'thermal-reflected-temperature': { group: 'input', subgroup: 'multispectral' },
+    'thermal-distance': { group: 'input', subgroup: 'thermal' },
+    'thermal-humidity': { group: 'input', subgroup: 'thermal' },
+    'thermal-emissivity': { group: 'input', subgroup: 'thermal' },
+    'thermal-ambient-temperature': { group: 'input', subgroup: 'thermal' },
+    'thermal-reflected-temperature': { group: 'input', subgroup: 'thermal' },
     
     'video-limit': { group: 'input', subgroup: 'video' },
     'video-resolution': { group: 'input', subgroup: 'video' },
