@@ -67,6 +67,8 @@ class RefreshJSONWebTokenSerializer(serializers.Serializer):
             raise serializers.ValidationError(_('Signature has expired.'))
         except jwt.DecodeError:
             raise serializers.ValidationError(_('Error decoding signature.'))
+        except jwt.InvalidTokenError:
+             raise serializers.ValidationError(_('Invalid token.'))
         user = jwt_user(payload, serializers.ValidationError)
 
         orig_iat = payload.get('orig_iat')
