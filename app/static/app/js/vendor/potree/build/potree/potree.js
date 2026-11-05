@@ -71033,6 +71033,7 @@ void main() {
 					depthMaterial.clipMethod = material.clipMethod;
 					depthMaterial.setClipBoxes(material.clipBoxes);
 					depthMaterial.setClipPolygons(material.clipPolygons);
+					depthMaterial.cropVertices = material.cropVertices;
 
 					pointcloud.material = depthMaterial;
 				}
@@ -71100,6 +71101,7 @@ void main() {
 					attributeMaterial.clipMethod = material.clipMethod;
 					attributeMaterial.setClipBoxes(material.clipBoxes);
 					attributeMaterial.setClipPolygons(material.clipPolygons);
+					attributeMaterial.cropVertices = material.cropVertices;
 
 					pointcloud.material = attributeMaterial;
 				}
