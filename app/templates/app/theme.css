@@ -118,7 +118,7 @@ a, a:hover, a:focus,
 #navbar-top .navbar-top-links a:focus,
 #navbar-top .navbar-top-links .open > a{
     background-color: {{ theme_button_primary }};
-    color: {{ theme_secondary }};
+    color: {{ theme_secondary }} !important;
 }
 
 #navbar-top ul#side-menu a:focus{
