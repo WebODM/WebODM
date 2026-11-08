@@ -375,12 +375,8 @@ def export_raster(input, output, progress_callback=None, **opts):
             # Apply hillshading, colormaps to elevation
             with rasterio.open(output_raster, 'w', **profile) as dst:
                 # Copy units information
-                if export_format == "gtiff" and not rgb and len(units) == len(dst.units):
-                    if slope:
-                        dst.units = ("degree",)
-                    else:
-                        dst.units = units
-
+                if export_format == "gtiff" and not rgb and not slope and len(units) == len(dst.units):
+                    dst.units = units
 
                 for idx, (w, dst_w) in enumerate(subwins):
                     p(f"Processing tile {idx}/{num_wins}", progress_per_win)
