@@ -230,8 +230,7 @@ export default class LayersControlLayer extends React.Component {
   }
 
   handleSelectDisplay = e => {
-    const display = e.target.value;
-    this.setState({display, colorMap: display === "slope" ? "viridis_q" : "viridis"});
+    this.setState({display: e.target.value});
   }
 
   isElevationModel = () => {
@@ -288,6 +287,11 @@ export default class LayersControlLayer extends React.Component {
                     max = Math.max(max, statistics[b]["percentiles"][1]);
                 }
                 this.rescale = `${min},${max}`;
+            }
+
+            const { color_maps } = this.tmeta;
+            if (this.state.colorMap && color_maps.length && !color_maps.find(c => c.key === this.state.colorMap)){
+                this.setState({colorMap: color_maps[0].key});
             }
 
             this.updateLayer();
