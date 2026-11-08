@@ -323,6 +323,25 @@ def get_rasterio_to_meters_factor(rasterio_ds):
             return UNIT_TO_M.get(unit, 1.0)
     return 1.0
 
+def get_rasterio_horizontal_to_meters_factors(rasterio_ds):
+    if rasterio_ds.crs is None:
+        return 1.0, 1.0
+
+    srs = osr.SpatialReference()
+    srs.ImportFromWkt(rasterio_ds.crs.to_wkt())
+
+    if srs.IsGeographic():
+        ang_units = srs.GetAngularUnits()
+        y_factor = ang_units * srs.GetSemiMajor()
+        mean_lat = (rasterio_ds.transform.f + rasterio_ds.height * rasterio_ds.transform.e / 2) * ang_units
+        return y_factor * math.cos(mean_lat), y_factor
+
+    if srs.IsProjected():
+        factor = srs.GetLinearUnits()
+        return factor, factor
+
+    return 1.0, 1.0
+
 def utm_crs_from_lonlat(lon, lat):
     utm_zone = (int(math.floor((lon + 180.0) / 6.0)) % 60) + 1
     epsg = 32600 + utm_zone if lat >= 0 else 32700 + utm_zone

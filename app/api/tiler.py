@@ -21,14 +21,16 @@ from .custom_colormaps_helper import custom_colormaps
 from app.raster_utils import extension_for_export_format, ZOOM_EXTRA_LEVELS
 from .hsvblend import hsv_blend
 from .hillshade import LightSource
+from .slope import compute_slope
 from .formulas import lookup_formula, get_algorithm_list, get_auto_bands
 from .tasks import TaskNestedView
-from app.geoutils import geom_transform_wkt_bbox, get_rasterio_to_meters_factor, polygon_bbox
+from app.geoutils import geom_transform_wkt_bbox, get_rasterio_to_meters_factor, get_rasterio_horizontal_to_meters_factors, polygon_bbox
 from rest_framework import exceptions
 from rest_framework.response import Response
 from worker.tasks import export_raster, export_pointcloud
 from django.utils.translation import gettext as _
 import warnings
+import math
 from functools import lru_cache
 from osgeo import osr
 
@@ -71,7 +73,7 @@ def get_tile_url(task, tile_type, query_params):
     url = '/api/projects/{}/tasks/{}/{}/tiles/{{z}}/{{x}}/{{y}}'.format(task.project.id, task.id, tile_type)
     params = {}
 
-    for k in ['formula', 'bands', 'rescale', 'color_map', 'hillshade']:
+    for k in ['formula', 'bands', 'rescale', 'color_map', 'hillshade', 'display']:
         if query_params.get(k):
             params[k] = query_params.get(k)
     
@@ -155,6 +157,8 @@ class Metadata(TaskNestedView):
         defined_range = self.request.query_params.get('range')
         crop = self.request.query_params.get('crop') == '1'
         boundaries_feature = self.request.query_params.get('boundaries')
+        display = self.request.query_params.get('display')
+        slope = display == 'slope'
         if formula == '': formula = None
         if bands == '': bands = None
         if defined_range == '': defined_range = None
@@ -179,6 +183,10 @@ class Metadata(TaskNestedView):
 
         except ValueError as e:
             raise exceptions.ValidationError(str(e))
+
+        if slope:
+            hrange = (0.0, 90.0)
+
         pmin, pmax = 2.0, 98.0
         raster_path = get_raster_path(task, tile_type)
         if not os.path.isfile(raster_path):
@@ -222,7 +230,16 @@ class Metadata(TaskNestedView):
                 if tile_type == 'orthophoto':
                     nodata = 0
                 histogram_options = {"bins": 255, "range": hrange}
-                if expr is not None:
+                if slope:
+                    preview, mask = src.preview(indexes=(1,), vrt_options=vrt_options)
+                    x_factor, y_factor = get_rasterio_horizontal_to_meters_factors(src.dataset)
+                    x_res, y_res = src.dataset.res
+                    dx = x_res * src.dataset.width / preview.shape[2] * x_factor / to_meter
+                    dy = y_res * src.dataset.height / preview.shape[1] * y_factor / to_meter
+                    data = np.ma.array(compute_slope(preview[0], mask != 0, dx, dy), mask=mask == 0)
+                    stats = {'1': raster_stats(data, percentiles=(pmin, pmax), bins=255, range=hrange)}
+                    info = {**src.info(), 'statistics': stats}
+                elif expr is not None:
                     data, mask = src.preview(expression=expr, vrt_options=vrt_options)
                     data = np.ma.array(data)
                     data.mask = mask == 0
@@ -269,14 +286,20 @@ class Metadata(TaskNestedView):
             "plasma": "Plasma",
             "inferno": "Inferno",
             "magma": "Magma",
-            "cividis": "Cividis"
+            "cividis": "Cividis",
+            "viridis_q": "Viridis",
+            "grayscale_q": "Grayscale",
+            "blue_q": "Blue",
+            "yellow_q": "Yellow"
         }
 
         colormaps = []
         algorithms = []
         auto_bands = {'filter': '', 'match': None}
 
-        if tile_type in ['dsm', 'dtm']:
+        if slope:
+            colormaps = ['viridis_q', 'grayscale_q', 'blue_q', 'yellow_q']
+        elif tile_type in ['dsm', 'dtm']:
             colormaps = ['viridis', 'jet', 'terrain', 'gist_earth', 'pastel1']
         elif formula and bands:
             colormaps = ['rdylgn', 'spectral', 'rdylgn_r', 'spectral_r', 'rplumbo', 'discrete_ndvi',
@@ -291,7 +314,7 @@ class Metadata(TaskNestedView):
         info['algorithms'] = algorithms
         info['auto_bands'] = auto_bands
 
-        if to_meter != 1.0:
+        if to_meter != 1.0 and not slope:
             for b in info['statistics']:
                 info['statistics'][b]['min'] *= to_meter
                 info['statistics'][b]['max'] *= to_meter
@@ -347,6 +370,8 @@ class Tiles(TaskNestedView):
         rescale = self.request.query_params.get('rescale')
         color_map = self.request.query_params.get('color_map')
         hillshade = self.request.query_params.get('hillshade')
+        display = self.request.query_params.get('display')
+        slope = display == 'slope'
         tilesize = self.request.query_params.get('size')
         crop = self.request.query_params.get('crop') == '1'
 
@@ -363,7 +388,7 @@ class Tiles(TaskNestedView):
         if bands == '': bands = None
         if rescale == '': rescale = None
         if color_map == '': color_map = None
-        if hillshade == '' or hillshade == '0': hillshade = None
+        if hillshade == '' or hillshade == '0' or slope: hillshade = None
         if tilesize == '' or tilesize is None: tilesize = 256
         if bands == 'auto' and formula:
             bands, _discard_ = get_auto_bands(task.orthophoto_bands, formula)
@@ -383,6 +408,8 @@ class Tiles(TaskNestedView):
         except ValueError as e:
             raise exceptions.ValidationError(str(e))
 
+        if slope and rescale is None:
+            rescale = "0,90"
         if tile_type in ['dsm', 'dtm'] and rescale is None:
             rescale = "0,1000"
         if tile_type == 'orthophoto' and rescale is None:
@@ -470,6 +497,10 @@ class Tiles(TaskNestedView):
                 if task.epsg is not None:
                     vrt_options['src_crs'] = f"EPSG:{task.epsg}"
 
+            # Slope needs the cells next to the tile edges
+            if slope:
+                tile_buffer = 1
+
             # Hillshading is not a local tile operation and
             # requires neighbor tiles to be rendered seamlessly
             if hillshade is not None:
@@ -498,10 +529,20 @@ class Tiles(TaskNestedView):
             intensity = None
             try:
                 rescale_arr = list(map(float, rescale.split(",")))
-                if tile_type in ['dsm', 'dtm']:
+                if tile_type in ['dsm', 'dtm'] and not slope:
                     rescale_arr = [v / to_meter for v in rescale_arr]
             except ValueError:
                 raise exceptions.ValidationError(_("Invalid rescale value"))
+
+            if slope:
+                xy = src.tms.xy_bounds(x, y, z)
+                lonlat = src.tms.bounds(x, y, z)
+                res = (xy[2] - xy[0]) / tilesize * math.cos(math.radians((lonlat[1] + lonlat[3]) / 2.0)) / to_meter
+                data = compute_slope(tile.data[0], tile.mask != 0, res, res)
+
+                # Remove buffer
+                b = tile_buffer
+                tile = ImageData(data[np.newaxis, b:-b, b:-b], tile.mask[b:-b, b:-b])
 
             # Auto?
             if ext is None:
@@ -590,6 +631,8 @@ class Export(TaskNestedView):
         color_map = request.data.get('color_map')
         hillshade = request.data.get('hillshade')
         resample = request.data.get('resample', 0)
+        display = request.data.get('display')
+        slope = display == 'slope'
 
         if formula == '': formula = None
         if bands == '': bands = None
@@ -613,10 +656,13 @@ class Export(TaskNestedView):
         # Default color map, hillshade
         if asset_type in ['dsm', 'dtm'] and export_format != 'gtiff':
             if color_map is None:
-                color_map = 'viridis'
+                color_map = 'viridis_q' if slope else 'viridis'
             if hillshade is None:
                 hillshade = 6
         
+        if slope:
+            hillshade = None
+
         if color_map is not None:
             try:
                 colormap.get(color_map)
@@ -692,13 +738,13 @@ class Export(TaskNestedView):
         extension = extension_for_export_format(export_format)
         filename = "{}{}.{}".format(
                         get_asset_download_filename(task, asset_type),
-                        "-{}".format(formula) if expr is not None else "",
+                        ("-{}".format(formula) if expr is not None else "") + ("-slope" if slope else ""),
                         extension
                     )
 
         if asset_type in ['orthophoto', 'dsm', 'dtm']:
             # Shortcut the process if no processing is required
-            if export_format == 'gtiff' and ((task.epsg is not None and epsg == task.epsg) or epsg is None) and (proj is None) and expr is None and task.crop is None:
+            if export_format == 'gtiff' and ((task.epsg is not None and epsg == task.epsg) or epsg is None) and (proj is None) and expr is None and not slope and task.crop is None:
                 return Response({'url': '/api/projects/{}/tasks/{}/download/{}.tif'.format(task.project.id, task.id, asset_type), 'filename': filename})
             else:
                 celery_task_id = export_raster.delay(url, epsg=epsg,
@@ -708,6 +754,7 @@ class Export(TaskNestedView):
                                                         rescale=rescale, 
                                                         color_map=color_map,
                                                         hillshade=hillshade,
+                                                        display=display,
                                                         asset_type=asset_type,
                                                         name=task.name,
                                                         crop=task.crop).task_id
