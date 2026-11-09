@@ -651,6 +651,9 @@ class TestApiTask(BootTransactionTestCase):
             # Tiles URL has no extra params
             self.assertTrue(metadata['tiles'][0].endswith('{z}/{x}/{y}'))
 
+            # Tile version is available
+            tile_version = metadata['tile_version']
+
             # Histogram stats are available (3 bands for orthophoto)
             self.assertTrue(len(metadata['statistics']) == 3)
             for b in ['1', '2', '3']:
@@ -841,6 +844,25 @@ class TestApiTask(BootTransactionTestCase):
             self.assertTrue(res.data['crop'] is not None)
             task.refresh_from_db()
             self.assertTrue(task.crop is not None)
+
+            # Tile version changes with the crop and with the raster
+            def get_tile_version():
+                res = client.get("/api/projects/{}/tasks/{}/orthophoto/metadata".format(project.id, task.id))
+                return json.loads(res.content.decode("utf-8"))['tile_version']
+
+            cropped_tile_version = get_tile_version()
+            self.assertNotEqual(cropped_tile_version, tile_version)
+            os.utime(task.get_asset_download_path("orthophoto.tif"), ns=(0, 0))
+            self.assertNotEqual(get_tile_version(), cropped_tile_version)
+
+            # Tiles can only be cached when requested with a version
+            tile_url = "/api/projects/{}/tasks/{}/orthophoto/tiles/{}.png".format(project.id, task.id, tile_path['orthophoto'])
+            res = client.get(tile_url)
+            self.assertEqual(res.status_code, status.HTTP_200_OK)
+            self.assertFalse(res.has_header('Cache-Control'))
+            res = client.get(tile_url + "?v=" + cropped_tile_version)
+            self.assertEqual(res.status_code, status.HTTP_200_OK)
+            self.assertTrue(res.get('Cache-Control').startswith('private'))
 
             # Can get thumbnail when crop is set
             res = client.get("/api/projects/{}/tasks/{}/thumbnail?size=64".format(project.id, task.id))

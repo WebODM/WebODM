@@ -5,6 +5,7 @@ from rasterio.features import bounds as featureBounds
 from rasterio.errors import NotGeoreferencedWarning
 import urllib
 import os
+import zlib
 from .common import get_asset_download_filename
 from django.http import HttpResponse
 from app.vendor.rio_tiler.errors import TileOutsideBounds
@@ -102,6 +103,12 @@ def get_extent(task, tile_type):
 
 def get_raster_path(task, tile_type):
     return task.get_asset_download_path(tile_type + ".tif")
+
+def get_tile_version(task, tile_type):
+    # Changes when the raster or the crop change, so that browsers
+    # can keep tiles requested with this value
+    crop = json.dumps(task.crop, sort_keys=True)
+    return "{}-{}".format(os.stat(get_raster_path(task, tile_type)).st_mtime_ns, zlib.crc32(crop.encode()))
 
 def get_pointcloud_path(task):
     return task.get_asset_download_path("georeferenced_model.laz")
@@ -337,6 +344,7 @@ class Metadata(TaskNestedView):
         info['name'] = task.name
         info['scheme'] = 'xyz'
         info['tiles'] = [get_tile_url(task, tile_type, self.request.query_params)]
+        info['tile_version'] = get_tile_version(task, tile_type)
 
         if info['maxzoom'] < info['minzoom']:
             info['maxzoom'] = info['minzoom']
@@ -349,6 +357,12 @@ class Metadata(TaskNestedView):
 
 
 class Tiles(TaskNestedView):
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        if response.status_code == 200 and request.query_params.get('v'):
+            response['Cache-Control'] = 'private, max-age=31536000, immutable'
+        return response
+
     def get(self, request, pk=None, project_pk=None, tile_type="", z="", x="", y="", scale=1, ext=None):
         """
         Get a tile image
