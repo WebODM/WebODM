@@ -403,7 +403,9 @@ def export_raster(input, output, progress_callback=None, **opts):
 
                         data = elevation
                         if slope:
-                            data = compute_slope(elevation, mask, slope_dx, slope_dy)
+                            data = compute_slope(elevation, mask,
+                                                 slope_dx * (w.width + pad * 2) / (window_size + pad * 2),
+                                                 slope_dy * (w.height + pad * 2) / (window_size + pad * 2))
 
                         intensity = None
                         if hillshade is not None and hillshade > 0:
