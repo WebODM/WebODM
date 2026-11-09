@@ -332,6 +332,37 @@ class TestApi(BootTestCase):
         self.assertTrue(task.pending_action != 0)
         self.assertTrue(len(res.data['can_rerun_from']) == 0)
 
+    def test_task_create_perms(self):
+        client = APIClient()
+        client.login(username="testuser", password="test1234")
+
+        user = User.objects.get(username="testuser")
+        project = Project.objects.get(name="User Test Project")
+        other_project = Project.objects.get(name="User 2 Test Project")
+        pnode = ProcessingNode.objects.create(hostname="localhost", port=999)
+        self.assertFalse(user.has_perm('view_processingnode', pnode))
+
+        # Cannot create a task that lands in another user's project
+        res = client.post('/api/projects/{}/tasks/'.format(project.id), {'partial': True, 'project': other_project.id}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(Task.objects.filter(project=other_project).count(), 0)
+
+        task = Task.objects.create(project=project)
+
+        with open("app/fixtures/tiny_drone_image.jpg", 'rb') as image:
+            # Cannot move a task into another user's project via upload
+            res = client.post('/api/projects/{}/tasks/{}/upload/'.format(project.id, task.id), {'images': image, 'project': other_project.id}, format='multipart')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        task.refresh_from_db()
+        self.assertEqual(task.project.id, project.id)
+
+        with open("app/fixtures/tiny_drone_image.jpg", 'rb') as image:
+            # Cannot assign a processing node the user has no access to via upload
+            res = client.post('/api/projects/{}/tasks/{}/upload/'.format(project.id, task.id), {'images': image, 'processing_node': pnode.id}, format='multipart')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        task.refresh_from_db()
+        self.assertIsNone(task.processing_node)
+
     def test_processingnodes(self):
         client = APIClient()
 
