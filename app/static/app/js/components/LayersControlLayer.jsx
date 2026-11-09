@@ -65,6 +65,7 @@ export default class LayersControlLayer extends React.Component {
         formula: params.formula || "",
         bands: params.bands || "",
         hillshade: params.hillshade || "",
+        display: params.display || "elevation",
         histogramLoading: false,
         exportLoading: false,
         side: false,
@@ -150,7 +151,8 @@ export default class LayersControlLayer extends React.Component {
     }
 
     if (prevState.formula !== this.state.formula ||
-        prevState.bands !== this.state.bands){
+        prevState.bands !== this.state.bands ||
+        prevState.display !== this.state.display){
         this.updateHistogram();
     }
 
@@ -227,6 +229,14 @@ export default class LayersControlLayer extends React.Component {
     this.setState({hillshade: e.target.value});
   }
 
+  handleSelectDisplay = e => {
+    this.setState({display: e.target.value});
+  }
+
+  isElevationModel = () => {
+    return this.asset === "dsm" || this.asset === "dtm";
+  }
+
   handleSelectFormula = e => {
     let bands = this.state.bands;
 
@@ -279,6 +289,11 @@ export default class LayersControlLayer extends React.Component {
                 this.rescale = `${min},${max}`;
             }
 
+            const { color_maps } = this.tmeta;
+            if (this.state.colorMap && color_maps.length && !color_maps.find(c => c.key === this.state.colorMap)){
+                this.setState({colorMap: color_maps[0].key});
+            }
+
             this.updateLayer();
         })
         .fail(err => console.error)
@@ -291,13 +306,15 @@ export default class LayersControlLayer extends React.Component {
     const { colorMap,
         formula,
         bands,
-        hillshade } = this.state;
+        hillshade,
+        display } = this.state;
     
     return {
         color_map: colorMap,
         formula,
         bands,
-        hillshade,
+        hillshade: display === "slope" ? "0" : hillshade,
+        display: display === "elevation" ? "" : display,
         rescale: this.rescale,
         size: 512,
         crop: 1
@@ -367,10 +384,11 @@ export default class LayersControlLayer extends React.Component {
   }
 
   render(){
-    const { colorMap, bands, hillshade, formula, histogramLoading, exportLoading, lazyLoading } = this.state;
+    const { colorMap, bands, hillshade, formula, display, histogramLoading, exportLoading, lazyLoading } = this.state;
     const { meta, tmeta } = this;
     const { color_maps, algorithms, auto_bands } = tmeta;
     const algo = this.getAlgorithm(formula);
+    const slope = display === "slope";
 
     let cmapValues = null;
     if (colorMap){
@@ -398,8 +416,8 @@ export default class LayersControlLayer extends React.Component {
             <Histogram width={274}
                         loading={histogramLoading}
                         statistics={tmeta.statistics}
-                        unitForward={meta.unitForward}
-                        unitBackward={meta.unitBackward}
+                        unitForward={slope ? undefined : meta.unitForward}
+                        unitBackward={slope ? undefined : meta.unitBackward}
                         colorMap={cmapValues}
                         min={hmin}
                         max={hmax}
@@ -435,11 +453,11 @@ export default class LayersControlLayer extends React.Component {
                 </div>
             </div> : ""}
 
-            {colorMap && color_maps.length ? 
+            {colorMap && color_maps.length ?
             <div className="row form-group form-inline">
                 <label className="col-sm-3 control-label">{_("Color:")}</label>
                 <div className="col-sm-9 ">
-                    {histogramLoading ? 
+                    {histogramLoading ?
                     <i className="fa fa-circle-notch fa-spin fa-fw" /> :
                     <select className="form-control" value={colorMap} onChange={this.handleSelectColor}>
                         {color_maps.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
@@ -447,7 +465,18 @@ export default class LayersControlLayer extends React.Component {
                 </div>
             </div> : ""}
 
-            {hillshade !== "" ? 
+            {this.isElevationModel() ?
+            <div className="row form-group form-inline">
+                <label className="col-sm-3 control-label">{_("Display:")}</label>
+                <div className="col-sm-9 ">
+                    <select className="form-control" value={display} onChange={this.handleSelectDisplay}>
+                        <option value="elevation">{_("Elevation")}</option>
+                        <option value="slope">{_("Slope")}</option>
+                    </select>
+                </div>
+            </div> : ""}
+
+            {hillshade !== "" && display !== "slope" ? 
             <div className="row form-group form-inline">
                 <label className="col-sm-3 control-label">{_("Shading:")}</label>
                 <div className="col-sm-9 ">

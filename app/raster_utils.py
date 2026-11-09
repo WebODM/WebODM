@@ -14,6 +14,8 @@ from app.vendor.rio_tiler.colormap import cmap as colormap, apply_cmap
 from app.vendor.rio_tiler.errors import InvalidColorMapName
 from app.api.hsvblend import hsv_blend
 from app.api.hillshade import LightSource
+from app.api.slope import compute_slope
+from app.geoutils import get_rasterio_to_meters_factor, get_rasterio_horizontal_to_meters_factors
 from app.vendor.rio_tiler.io import COGReader
 from webodm import settings
 
@@ -112,6 +114,8 @@ def export_raster(input, output, progress_callback=None, **opts):
     rescale = opts.get('rescale')
     color_map = opts.get('color_map')
     hillshade = opts.get('hillshade')
+    display = opts.get('display')
+    slope = display == 'slope'
     asset_type = opts.get('asset_type')
     name = opts.get('name', 'raster') # KMZ specific
     crop = opts.get('crop')
@@ -212,7 +216,11 @@ def export_raster(input, output, progress_callback=None, **opts):
 
         if compress is not None and not reproject:
             profile.update(compress=compress)
-            profile.update(predictor=2 if compress == "DEFLATE" else 1)
+            if compress == "DEFLATE":
+                profile.update(predictor=3 if profile['dtype'] == rasterio.float32 else 2)
+
+        if rgb and rescale is None and slope:
+            rescale = [0, 90]
 
         if rgb and rescale is None:
             # Compute min max
@@ -298,6 +306,15 @@ def export_raster(input, output, progress_callback=None, **opts):
         if dem and rgb and profile.get('nodata') is not None:
             profile.update(nodata=None)
 
+        if slope:
+            to_meter = get_rasterio_to_meters_factor(src)
+            x_factor, y_factor = get_rasterio_horizontal_to_meters_factors(src)
+            x_res, y_res = src.res
+            slope_dx = x_res * x_factor / to_meter
+            slope_dy = y_res * y_factor / to_meter
+
+            if not rgb:
+                profile.update(dtype=rasterio.float32, nodata=-9999)
         
         post_perc = 20 if reproject or kmz else 0
         num_wins = len(subwins)
@@ -309,6 +326,8 @@ def export_raster(input, output, progress_callback=None, **opts):
                 profile.update(dtype=rasterio.uint8, count=band_count)
             else:
                 profile.update(dtype=rasterio.float32, count=1, nodata=-9999)
+                if profile.get('predictor') == 2:
+                    profile.update(predictor=3)
 
             bands_names = ["b{}".format(b) for b in tuple(sorted(set(re.findall(r"b(?P<bands>[0-9]{1,2})", expression))))]
             rgb_expr = expression.split(",")
@@ -356,7 +375,7 @@ def export_raster(input, output, progress_callback=None, **opts):
             # Apply hillshading, colormaps to elevation
             with rasterio.open(output_raster, 'w', **profile) as dst:
                 # Copy units information
-                if export_format == "gtiff" and not rgb and len(units) == len(dst.units):
+                if export_format == "gtiff" and not rgb and not slope and len(units) == len(dst.units):
                     dst.units = units
 
                 for idx, (w, dst_w) in enumerate(subwins):
@@ -382,6 +401,12 @@ def export_raster(input, output, progress_callback=None, **opts):
 
                         mask = elevation != nodata
 
+                        data = elevation
+                        if slope:
+                            data = compute_slope(elevation, mask,
+                                                 slope_dx * (w.width + pad * 2) / (window_size + pad * 2),
+                                                 slope_dy * (w.height + pad * 2) / (window_size + pad * 2))
+
                         intensity = None
                         if hillshade is not None and hillshade > 0:
                             delta_scale = ZOOM_EXTRA_LEVELS ** 2
@@ -393,7 +418,7 @@ def export_raster(input, output, progress_callback=None, **opts):
                             intensity = intensity[pad:pad+window_size, pad:pad+window_size]
                             intensity = intensity * 255.0
 
-                        rgb_data, _ = apply_cmap(process(elevation[pad:window_size+pad, pad:window_size+pad][np.newaxis,:], skip_background=True, includes_alpha=False), cmap)
+                        rgb_data, _ = apply_cmap(process(data[pad:window_size+pad, pad:window_size+pad][np.newaxis,:], skip_background=True, includes_alpha=False), cmap)
 
                         if intensity is not None:
                             rgb_data = hsv_blend(rgb_data, intensity)
@@ -404,6 +429,13 @@ def export_raster(input, output, progress_callback=None, **opts):
                             dst.write(mask.astype(np.uint8) * 255, 4, window=dst_w)
 
                         update_rgb_colorinterp(dst)
+                    elif slope and not rgb:
+                        src_nodata = src.nodata if src.nodata is not None else -9999
+                        elevation = src.read(1, window=padded_window(w, 1), boundless=True, fill_value=src_nodata)
+                        valid = elevation != src_nodata
+                        data = compute_slope(elevation, valid, slope_dx, slope_dy)
+                        data[~valid] = src_nodata
+                        dst.write(data[1:-1, 1:-1][np.newaxis], window=dst_w)
                     else:
                         # Raw
                         arr = src.read(window=w)[:1]
@@ -453,7 +485,7 @@ def export_raster(input, output, progress_callback=None, **opts):
                     gt_args += ["-co", "QUALITY=90"]
                 else:
                     gt_args += ["-co", f"COMPRESS={compress}", 
-                                "-co", "PREDICTOR=2"]
+                                "-co", f"PREDICTOR={3 if profile['dtype'] == rasterio.float32 else 2}"]
 
             subprocess.check_output(["gdal_translate"] +  
                                     gt_args +

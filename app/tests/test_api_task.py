@@ -846,18 +846,21 @@ class TestApiTask(BootTransactionTestCase):
             res = client.get("/api/projects/{}/tasks/{}/thumbnail?size=64".format(project.id, task.id))
             self.assertEqual(res.status_code, status.HTTP_200_OK)
 
-            # Can access hillshade, formulas, bands, rescale, color_map
+            # Can access hillshade, formulas, bands, rescale, color_map, display
             params = [
                 ("dsm", "color_map=jet&hillshade=3&rescale=150,170", status.HTTP_200_OK),
                 ("dsm", "color_map=jet&hillshade=0&rescale=150,170", status.HTTP_200_OK),
                 ("dsm", "color_map=invalid&rescale=150,170", status.HTTP_400_BAD_REQUEST),
                 ("dsm", "color_map=jet&rescale=invalid", status.HTTP_400_BAD_REQUEST),
                 ("dsm", "color_map=jet&rescale=150,170&hillshade=invalid", status.HTTP_400_BAD_REQUEST),
+                ("dsm", "color_map=viridis_q&rescale=5,85.5&display=slope", status.HTTP_200_OK),
+                ("dsm", "color_map=grayscale_q&display=slope", status.HTTP_200_OK),
 
                 ("dtm", "hillshade=3", status.HTTP_200_OK),
                 ("dtm", "hillshade=99999999999999999999999999999999999", status.HTTP_200_OK),
                 ("dtm", "hillshade=-9999999999999999999999999999999999", status.HTTP_200_OK),
                 ("dtm", "hillshade=0", status.HTTP_200_OK),
+                ("dtm", "color_map=grayscale_q&display=slope", status.HTTP_200_OK),
 
                 ("orthophoto", "hillshade=3", status.HTTP_400_BAD_REQUEST),
                 
