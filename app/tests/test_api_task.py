@@ -13,6 +13,8 @@ import json
 import requests
 from PIL import Image
 from django.contrib.auth.models import User
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from rest_framework import status
 from rest_framework.test import APIClient
 from app.geoutils import bbox_to_polygon
@@ -1650,3 +1652,27 @@ class TestApiTask(BootTransactionTestCase):
         res = client.get("/api/projects/{}/tasks/?bbox=bad".format(project.id))
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_task_list_queries(self):
+        user = User.objects.get(username="testuser")
+        project = Project.objects.create(name="User Test Project", owner=user)
+        pnode = ProcessingNode.objects.create(hostname="localhost", port=11223)
+        Task.objects.create(project=project, name="Task 1", processing_node=pnode)
+
+        client = APIClient()
+        client.login(username="testuser", password="test1234")
+        url = "/api/projects/{}/tasks/".format(project.id)
+
+        client.get(url)
+        with CaptureQueriesContext(connection) as one_task:
+            res = client.get(url)
+        self.assertEqual(len(res.data), 1)
+
+        Task.objects.create(project=project, name="Task 2", processing_node=pnode)
+        Task.objects.create(project=project, name="Task 3", processing_node=pnode)
+
+        with CaptureQueriesContext(connection) as three_tasks:
+            res = client.get(url)
+        self.assertEqual(len(res.data), 3)
+
+        # The number of queries does not depend on the number of tasks
+        self.assertEqual(len(three_tasks), len(one_task))
