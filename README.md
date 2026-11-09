@@ -2,8 +2,6 @@
 
 ![Build Status](https://img.shields.io/github/actions/workflow/status/WebODM/WebODM/build-and-publish.yml?branch=master) ![Version](https://img.shields.io/github/v/release/WebODM/WebODM) [![Translated](https://hosted.weblate.org/widgets/webodm/-/svg-badge.svg)](https://hosted.weblate.org/engage/webodm/) [![Documentation](https://img.shields.io/badge/Documentation-%F0%9F%93%96-pink)](https://docs.webodm.org) [![Download](https://img.shields.io/badge/Download-%F0%9F%93%A5-white)](https://webodm.org/download) [![Lightning](https://img.shields.io/badge/Lightning-%E2%98%81-white)](https://webodm.net/)
 
-> **📢 WebODM has officially decoupled from OpenDroneMap!** [Read the announcement](https://webodm.org/blog/announcement/)
-
 > **Now with Django 5.2 LTS, Postgres 18, Valkey 9.1 and faster dynamic tiler**
 
 A user-friendly, commercial grade software for drone image processing. Generate georeferenced maps, point clouds, elevation models, textured 3D models and gaussian splats from aerial images. It supports multiple engines for processing, currently [ODX](https://github.com/WebODM/ODX), [MicMac](https://github.com/OpenDroneMap/NodeMICMAC/) and [LGT](https://webodm.net/lgt).
