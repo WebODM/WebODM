@@ -111,6 +111,7 @@ class TaskSplatsUpload(TaskNestedView):
                 os.unlink(chunk_info['tmp_upload_file'])
 
             with open(chunk_info['tmp_upload_file'], 'ab') as fd:
+                fd.truncate(chunk_info['byte_offset'])
                 fd.seek(chunk_info['byte_offset'])
                 if isinstance(file, InMemoryUploadedFile):
                     for chunk in file.chunks():

@@ -257,6 +257,21 @@ class TestSplats(BootTestCase):
         with open(task.get_asset_file_or_stream('splats.rad'), 'rb') as f:
             self.assertEqual(f.read(), payload)
 
+        # A retried chunk does not corrupt the upload
+        for i in [0, 1, 1, 2]:
+            buf = io.BytesIO(chunks[i])
+            buf.name = 'model.rad'
+            res = client.post(upload_url, {
+                'file': buf,
+                'dzuuid': 'test-chunk-retry',
+                'dzchunkindex': i,
+                'dzchunkbyteoffset': sum(len(c) for c in chunks[:i]),
+                'dztotalchunkcount': len(chunks)
+            }, format='multipart')
+            self.assertEqual(res.status_code, status.HTTP_200_OK)
+        with open(task.get_asset_file_or_stream('splats.rad'), 'rb') as f:
+            self.assertEqual(f.read(), payload)
+
         # A .rad file is stored directly (no processing) and replaces the current model
         rad = io.BytesIO(b"mock rad model")
         rad.name = 'model.rad'

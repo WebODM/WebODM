@@ -43,6 +43,27 @@ class TestMedia(BootTestCase):
         self.assertEqual(len(task.media), 1)
         self.assertEqual(task.media[0]['type'], 'photo')
 
+        # A retried chunk does not corrupt the upload
+        data = create_test_image().getvalue()
+        chunks = [data[0:64], data[64:128], data[128:]]
+        for i in [0, 1, 1, 2]:
+            buf = io.BytesIO(chunks[i])
+            buf.name = 'retry.jpg'
+            res = client.post("/api/projects/{}/tasks/{}/media/upload".format(project.id, task.id), {
+                'file': buf,
+                'dzuuid': 'test-chunk-retry',
+                'dzchunkindex': i,
+                'dzchunkbyteoffset': sum(len(c) for c in chunks[:i]),
+                'dztotalchunkcount': len(chunks)
+            }, format='multipart')
+            self.assertEqual(res.status_code, status.HTTP_200_OK)
+        with open(task.media_directory_path('retry.jpg'), 'rb') as f:
+            self.assertEqual(f.read(), data)
+        res = client.delete("/api/projects/{}/tasks/{}/media/manage/retry.jpg".format(project.id, task.id))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        task.refresh_from_db()
+        self.assertEqual(len(task.media), 1)
+
         # Upload photo with bad filename
         img = create_test_image()
         img.name = 'test$%.jpg'
