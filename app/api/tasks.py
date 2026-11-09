@@ -114,7 +114,7 @@ def check_processing_node_perms(request):
         except:
             raise exceptions.ValidationError(detail=_("Cannot create task, processing node is not valid"))
 
-def check_project_perms(request):
+def check_project_reassign_perms(request):
     if 'project' in request.data:
         try:
             get_and_check_project(request, request.data['project'], ('change_project', ), defer=True)
@@ -326,7 +326,7 @@ class TaskViewSet(viewsets.ViewSet):
             raise exceptions.NotFound()
 
         check_processing_node_perms(request)
-        check_project_perms(request)
+        check_project_reassign_perms(request)
 
         files = flatten_files(request.FILES)
         if len(files) == 0:
@@ -397,7 +397,7 @@ class TaskViewSet(viewsets.ViewSet):
 
         # Check if user has permissions to set processing node
         check_processing_node_perms(request)
-        check_project_perms(request)
+        check_project_reassign_perms(request)
 
         # Check if an alignment field is set to a valid task
         # this means a user wants to align this task with another
@@ -456,7 +456,7 @@ class TaskViewSet(viewsets.ViewSet):
         check_processing_node_perms(request)
 
         # Check that a user has access to reassign a project
-        check_project_perms(request)
+        check_project_reassign_perms(request)
 
         serializer = TaskSerializer(task, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
