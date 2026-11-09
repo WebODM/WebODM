@@ -1599,6 +1599,33 @@ class TestApiTask(BootTransactionTestCase):
 
             image2.close()
 
+    def test_task_chunked_upload_retry(self):
+        user = User.objects.get(username="testuser")
+        project = Project.objects.create(name="User Test Project", owner=user)
+        task = Task.objects.create(project=project, name="Retry", partial=True)
+
+        client = APIClient()
+        client.login(username="testuser", password="test1234")
+
+        payload = b"a chunked upload that is retried"
+        chunks = [payload[0:8], payload[8:16], payload[16:]]
+
+        # The second chunk is sent twice, as when a response is lost after the chunk was written
+        for i in [0, 1, 1, 2]:
+            buf = io.BytesIO(chunks[i])
+            buf.name = "retry.jpg"
+            res = client.post("/api/projects/{}/tasks/{}/upload/".format(project.id, task.id), {
+                'images': [buf],
+                'dzuuid': 'test-chunk-retry',
+                'dzchunkindex': i,
+                'dztotalchunkcount': len(chunks),
+                'dzchunkbyteoffset': sum(len(c) for c in chunks[:i])
+            }, format="multipart")
+            self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        with open(task.get_image_path("retry.jpg"), 'rb') as f:
+            self.assertEqual(f.read(), payload)
+
     def test_task_list(self):
         user = User.objects.get(username="testuser")
         project = Project.objects.create(name="User Test Project", owner=user)
