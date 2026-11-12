@@ -17,6 +17,18 @@
                         <span class="email">{{ user.email }}</span>
                     </div>
                 </li>
+                <li class="divider"></li>
+                <li>
+                    {% available_languages as languages %}
+                    <form class="language-select" onsubmit="return false;">
+                        <i class="fa fa-globe fa-fw"></i>
+                        <select class="form-control input-sm" title="{% trans 'Language' %}" onchange="window.setLocale(this.value);">
+                            {% for code, name, selected in languages %}
+                            <option value="{{ code }}"{% if selected %} selected{% endif %}>{{ name }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                </li>
                 {% if user.profile.has_quota %}
                     <li class="divider"></li>
 

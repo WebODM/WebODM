@@ -1,10 +1,12 @@
 import datetime
+import functools
+import os
 import math
 import logging
 import time
 from django import template
 from webodm import settings
-from django.utils.translation import gettext as _
+from django.utils.translation import gettext as _, get_language, get_language_info, get_supported_language_variant, to_language
 from app.oidc_providers import get_oidc_providers
 
 register = template.Library()
@@ -83,6 +85,47 @@ def quota_exceeded_grace_period(context):
 @register.simple_tag
 def is_single_user_mode():
     return settings.SINGLE_USER_MODE
+
+@functools.cache
+def language_list():
+    if hasattr(settings, 'LANGUAGES'):
+        codes = [(c, n) for c, n in settings.LANGUAGES]
+    else:
+        codes = [('en', None)]
+        for path in settings.LOCALE_PATHS:
+            if not os.path.isdir(path):
+                continue
+            for d in os.listdir(path):
+                if os.path.isdir(os.path.join(path, d, 'LC_MESSAGES')):
+                    codes.append((to_language(d), None))
+
+    seen = set()
+    langs = []
+    for code, name in codes:
+        try:
+            code = get_supported_language_variant(code)
+        except LookupError:
+            continue
+        if code in seen:
+            continue
+        seen.add(code)
+        try:
+            name = get_language_info(code)['name_local']
+        except KeyError:
+            name = str(name or code)
+        langs.append((code, name[:1].upper() + name[1:]))
+
+    langs.sort(key=lambda l: l[1].casefold())
+    return tuple(langs)
+
+@register.simple_tag
+def available_languages():
+    langs = language_list()
+    preferred = get_language() or ''
+    if not any(code == preferred for code, name in langs):
+        # handle regional variants (en-gb, en-us, etc.)
+        preferred = preferred.split('-')[0]
+    return [(code, name, code == preferred) for code, name in langs]
 
 @register.simple_tag
 def is_desktop_mode():
