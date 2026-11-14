@@ -274,6 +274,7 @@ class TaskOverlayConvert(TaskNestedView):
 
             args += ['--config', 'DXF_ENCODING', 'UTF-8']
             args += ['--config', 'DXF_3D_EXTENSIBLE_MODE', 'YES']
+            args += ["-if", "DXF" if is_dxf else "ESRI Shapefile"]
             
             outfile = os.path.join(tmpdir, "output.geojson")
             p = subprocess.Popen(args + [outfile, src],

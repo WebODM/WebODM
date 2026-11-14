@@ -321,8 +321,14 @@ _('Example:'),
       
       const parseImage = i => {
         const img = images[i];
-        exifr.parse(img, options).then(exif => {
-          if (!exif.latitude || !exif.longitude){
+        const readExif = img => {
+          if (img instanceof Blob) return exifr.parse(img, options);
+          if (typeof img.parseExif === "function") return img.parseExif(options);
+          return Promise.resolve({});
+        };
+
+        readExif(img).then(exif => {
+          if (!exif || !exif.latitude || !exif.longitude){
               // reject(new Error(interpolate(_("Cannot extract GPS data from %(file)s"), {file: img.name})));
               next(i);
               return;

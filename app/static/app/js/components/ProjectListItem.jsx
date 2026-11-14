@@ -20,6 +20,8 @@ import exifr from '../vendor/exifr';
 import { _, interpolate } from '../classes/gettext';
 import $ from 'jquery';
 
+const ACCEPTED_FILES = "image/*,text/plain,.las,.laz,video/*,.srt,.dng,.nef,.gpx";
+
 class ProjectListItem extends React.Component {
   static defaultProps = {
     basemaps: []
@@ -48,6 +50,7 @@ class ProjectListItem extends React.Component {
       importingExternal: false,
       buttons: [],
       importItems: [],
+      selectImagesItems: [],
       sortKey: Storage.getItem("task_ordering") || "-created_at",
       filterTags: [],
       selectedTags: [],
@@ -152,7 +155,7 @@ class ProjectListItem extends React.Component {
           url : 'TO_BE_CHANGED',
           parallelUploads: unstableConnection ? 1 : 6,
           uploadMultiple: false,
-          acceptedFiles: "image/*,text/plain,.las,.laz,video/*,.srt,.dng,.nef,.gpx",
+          acceptedFiles: ACCEPTED_FILES,
           autoProcessQueue: false,
           createImageThumbnails: false,
           clickable: this.uploadButton,
@@ -228,6 +231,11 @@ class ProjectListItem extends React.Component {
       };
 
       this.dz.on("addedfiles", files => {
+          if (this.pluginUpload){
+            this.pluginUpload = null;
+            this.resetUploadState();
+          }
+
           let totalBytes = 0;
 
           // Append a suffix to duplicate filenames
@@ -419,6 +427,40 @@ class ProjectListItem extends React.Component {
             importItems: {$push: [item]}
         }));
     });
+
+    if (this.hasPermission("add")){
+      PluginsAPI.Dashboard.triggerAddSelectImagesItem({
+        projectId: this.state.data.id,
+        acceptedFiles: ACCEPTED_FILES,
+        onFilesSelected: this.handlePluginFilesSelected
+      }, (item) => {
+          if (!item) return;
+
+          this.setState(update(this.state, {
+              selectImagesItems: {$push: [item]}
+          }));
+      });
+    }
+  }
+
+  handlePluginFilesSelected = (error, files, upload) => {
+    if (error){
+      this.setUploadState({error});
+      return;
+    }
+
+    if (this.dz.files.length) this.dz.removeAllFiles(true);
+
+    let totalBytes = 0;
+    for (let i = 0; i < files.length; i++) totalBytes += files[i].size || 0;
+
+    this.pluginUpload = upload;
+    this.setUploadState(Object.assign(this.getDefaultUploadState(), {
+      editing: true,
+      files,
+      totalCount: files.length,
+      totalBytes
+    }));
   }
 
   newTaskAdded = () => {
@@ -463,6 +505,12 @@ class ProjectListItem extends React.Component {
 
   handleCancel(){
     this.manuallyCanceled = true;
+    if (this.pluginUploadReq){
+      this.pluginUploadReq.cancel();
+      this.pluginUploadReq = null;
+      this.pluginUpload = null;
+      this.resetUploadState();
+    }
     this.cancelUpload();
     if (this.dz._taskInfo && this.dz._taskInfo.id !== undefined){
       $.ajax({
@@ -523,8 +571,38 @@ class ProjectListItem extends React.Component {
       }).done((task) => {
         if (task && task.id){
             this.dz._taskInfo.id = task.id;
-            this.dz.options.url = `/api/projects/${this.state.data.id}/tasks/${task.id}/upload/`;
-            this.dz.processQueue();
+            if (this.pluginUpload){
+              this.pluginUploadReq = this.pluginUpload({
+                project: this.state.data,
+                task,
+                files: this.state.upload.files
+              }, error => {
+                this.pluginUploadReq = null;
+                this.pluginUpload = null;
+
+                if (error){
+                  this.setUploadState({uploading: false, error});
+                  $.ajax({
+                    url: `/api/projects/${this.state.data.id}/tasks/${task.id}/remove/`,
+                    contentType: 'application/json',
+                    dataType: 'json',
+                    type: 'POST'
+                  });
+                }else{
+                  this.setUploadState({uploading: false});
+                  this.newTaskAdded();
+                }
+              }, (progress, bytesSent, filesSent) => {
+                this.setUploadState({
+                  progress,
+                  totalBytesSent: bytesSent,
+                  uploadedCount: filesSent
+                });
+              });
+            }else{
+              this.dz.options.url = `/api/projects/${this.state.data.id}/tasks/${task.id}/upload/`;
+              this.dz.processQueue();
+            }
         }else{
             this.setState({error: interpolate(_('Cannot create new task. Invalid response from server: %(error)s'), { error: JSON.stringify(task) }) });
             this.handleTaskCanceled();
@@ -536,6 +614,7 @@ class ProjectListItem extends React.Component {
   }
 
   handleTaskCanceled = () => {
+    this.pluginUpload = null;
     this.dz.removeAllFiles(true);
     this.resetUploadState();
   }
@@ -628,8 +707,14 @@ class ProjectListItem extends React.Component {
                 interop: false,
                 ifd1: false // thumbnail
               };
-              exifr.parse(f, options).then(exif => {
-                if (!exif.latitude || !exif.longitude){
+              const readExif = f => {
+                if (f instanceof Blob) return exifr.parse(f, options);
+                if (typeof f.parseExif === "function") return f.parseExif(options);
+                return Promise.resolve({});
+              };
+
+              readExif(f).then(exif => {
+                if (!exif || !exif.latitude || !exif.longitude){
                     reject();
                     return;
                 }
@@ -763,13 +848,25 @@ class ProjectListItem extends React.Component {
           <div className="btn-group project-buttons">
             {this.hasPermission("add") ? 
               <div className={"asset-download-buttons btn-group " + (this.state.upload.uploading ? "hide" : "")}>
-                <button type="button" 
-                      className="btn btn-primary btn-sm"
-                      onClick={this.handleUpload}
-                      ref={this.setRef("uploadButton")}>
-                  <i className="glyphicon glyphicon-upload"></i>
-                  <span className="hidden-xs">{_("Select Images and GCP")}</span>
-                </button>
+                <div className="btn-group">
+                  <button type="button" 
+                        className="btn btn-primary btn-sm"
+                        onClick={this.handleUpload}
+                        ref={this.setRef("uploadButton")}>
+                    <i className="glyphicon glyphicon-upload"></i>
+                    <span className="hidden-xs">{_("Select Images and GCP")}</span>
+                  </button>
+                  {this.state.selectImagesItems.length ? 
+                    [<button key="toggle" type="button" 
+                          className="btn btn-primary btn-sm dropdown-toggle"
+                          data-toggle="dropdown">
+                      <span className="caret"></span>
+                    </button>,
+                    <ul key="menu" className="dropdown-menu select-images-dropdown">
+                      {this.state.selectImagesItems.map((item, i) => <React.Fragment key={i}>{item}</React.Fragment>)}
+                    </ul>]
+                  : ""}
+                </div>
                 <button type="button" 
                       className="btn btn-default btn-sm btn-import"
                       data-toggle="dropdown">

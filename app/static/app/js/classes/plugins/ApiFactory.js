@@ -1,5 +1,13 @@
 import SystemJS from 'SystemJS';
 
+const versioned = dep => {
+  const version = (window.PluginVersions || {})[dep.split("/")[0]];
+  if (!version || dep.indexOf("?") !== -1) return dep;
+
+  const url = `${dep}?v=${encodeURIComponent(version)}`;
+  return /\.css$/i.test(dep) ? `${url}!css` : url;
+};
+
 export default class ApiFactory{
   // @param events {EventEmitter}
   constructor(events){
@@ -30,7 +38,7 @@ export default class ApiFactory{
           // Load dependencies, then raise event as usual
           // by appending the dependencies to the argument list
           this.events.addListener(`${api.namespace}::${eventName}`, args => {
-            Promise.all(callbackOrDeps.map(dep => SystemJS.import(dep)))
+            Promise.all(callbackOrDeps.map(dep => SystemJS.import(versioned(dep))))
               .then((...deps) => {
                 
                 // For each dependency, see if it exports a default module (ES6 style)
