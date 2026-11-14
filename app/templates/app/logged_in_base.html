@@ -75,6 +75,7 @@
 
                 {% get_plugins_main_menus as plugin_menus %}
                 {% for menu in plugin_menus %}
+                    {% if not menu.admin_only or user.is_superuser %}
                     <li>
                         <a href="{{menu.link}}"><i class="{{menu.css_icon}}"></i> {{menu.label}}{% if menu.has_submenu %}<span class="fa arrow"></span>{% endif %}</a>
 
@@ -88,6 +89,7 @@
                             </ul>
                         {% endif %}
                     </li>
+                    {% endif %}
                 {% endfor %}
 
                 {% if view_nodes %}

@@ -1,5 +1,6 @@
 import json
-import logging, os, sys, subprocess
+import logging, os, re, sys, subprocess
+from urllib.parse import quote
 from abc import ABC
 from app.plugins import UserDataStore, GlobalDataStore
 from app.plugins.functions import get_plugins_persistent_path
@@ -127,11 +128,23 @@ class PluginBase(ABC):
     def get_module_name(self):
         return self.__class__.__module__
 
+    def get_version(self):
+        version = str(self.get_manifest().get('version', ''))
+        if re.fullmatch(r'[0-9.]+', version):
+            return version
+        return '0.0.1'
+
+    def versioned_url(self, path):
+        version = self.get_version()
+        if not version:
+            return self.public_url(path)
+        return "{}?v={}".format(self.public_url(path), quote(version))
+
     def get_include_js_urls(self):
-        return [self.public_url(js_file) for js_file in self.include_js_files()]
+        return [self.versioned_url(js_file) for js_file in self.include_js_files()]
 
     def get_include_css_urls(self):
-        return [self.public_url(css_file) for css_file in self.include_css_files()]
+        return [self.versioned_url(css_file) for css_file in self.include_css_files()]
 
     def public_url(self, path):
         """
@@ -257,7 +270,7 @@ class PluginBase(ABC):
 
     def get_manifest(self):
         # Lazy loading
-        if self.manifest: return self.manifest
+        if self.manifest is not None: return self.manifest
 
         manifest_path = self.get_path("manifest.json")
 

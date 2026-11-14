@@ -6,6 +6,7 @@ export default {
     "addNewTaskPanelItem",
     "addNewTaskButton",
     "addImportTaskItem",
+    "addSelectImagesItem",
     "presetDialogOptionsReady"
   ]
 };

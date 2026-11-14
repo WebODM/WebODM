@@ -84,8 +84,8 @@ class TestPlugins(BootTestCase):
         res = client.get('/dashboard/')
         self.assertEqual(res.status_code, status.HTTP_200_OK)
 
-        self.assertContains(res, "<link href='/plugins/test/test.css' rel='stylesheet' type='text/css'>", html=True)
-        self.assertContains(res, "<script src='/plugins/test/test.js'></script>", html=True)
+        self.assertContains(res, "<link href='/plugins/test/test.css?v=0.1.0' rel='stylesheet' type='text/css'>", html=True)
+        self.assertContains(res, "<script src='/plugins/test/test.js?v=0.1.0'></script>", html=True)
 
         # And our menu entry
         self.assertContains(res, '<li><a href="/plugins/test/menu_url/"><i class="test-icon"></i> Test</a></li>', html=True)
@@ -229,7 +229,7 @@ class TestPlugins(BootTestCase):
         # Test plugin is enabled
         res = c.get('/admin/app/plugin/')
         self.assertContains(res, '<a class="button" href="#" disabled>Enable</a>')
-        self.assertContains(res, "<script src='/plugins/test/test.js'></script>")
+        self.assertContains(res, "<script src='/plugins/test/test.js?v=0.1.0'></script>")
 
         self.assertContains(res, 'data-can-build="true"')
         self.assertContains(res, 'data-webodm-version="{}"'.format(settings.VERSION))
@@ -244,7 +244,7 @@ class TestPlugins(BootTestCase):
 
         # Test plugin has been disabled
         self.assertContains(res, '<a class="button" href="#" disabled>Disable</a>')
-        self.assertNotContains(res, "<script src='/plugins/test/test.js'></script>")
+        self.assertNotContains(res, "<script src='/plugins/test/test.js?v=0.1.0'></script>")
 
         # Re-enable
         res = c.get('/admin/app/plugin/test/enable/', follow=True)
