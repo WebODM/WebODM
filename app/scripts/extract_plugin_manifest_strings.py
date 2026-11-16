@@ -8,6 +8,9 @@ def extract_plugin_manifest_strings(plugins_dir, output):
     print("Found %s manifests" % len(manifests))
 
     for m in manifests:
+        if os.path.isdir(os.path.join(os.path.dirname(m), "locale")):
+            continue
+
         with open(m) as f:
             j = json.loads(f.read())
             if j.get("description"):
