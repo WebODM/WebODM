@@ -11,6 +11,7 @@ def detect(orthophoto, model, classes=None, crop=None, progress_callback=None):
     import subprocess
     import shutil
     import tempfile
+    import json
     from webodm import settings
 
     try:
