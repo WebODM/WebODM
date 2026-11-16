@@ -5,6 +5,8 @@ from abc import ABC
 from app.plugins import UserDataStore, GlobalDataStore
 from app.plugins.functions import get_plugins_persistent_path
 from contextlib import contextmanager
+from django.conf import settings
+from django.utils.translation import trans_real
 
 from app.plugins.pyutils import requirements_installed, compute_file_md5
 
@@ -17,6 +19,17 @@ class PluginBase(ABC):
 
     def register(self):
         self.check_requirements()
+        self.register_locale()
+
+    def register_locale(self):
+        """
+        Add the plugin's locale directory (if any) to the translation paths
+        """
+        locale_path = self.get_path("locale")
+        if os.path.isdir(locale_path) and locale_path not in settings.LOCALE_PATHS:
+            settings.LOCALE_PATHS = list(settings.LOCALE_PATHS) + [locale_path]
+            trans_real._translations.clear()
+            trans_real._default = None
 
     def check_requirements(self):
         """

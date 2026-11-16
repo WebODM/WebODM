@@ -7,6 +7,7 @@ import traceback
 import platform
 
 import json
+import glob
 
 import shutil
 from functools import reduce
@@ -83,6 +84,18 @@ def clear_plugins_cache():
 
 def build_plugins():
     for plugin in get_plugins():
+        # Build translations (.po --> .mo) if needed
+        if plugin.path_exists("locale"):
+            for po in glob.glob(plugin.get_path("locale", "*", "LC_MESSAGES", "*.po")):
+                mo = po[:-3] + ".mo"
+                if not os.path.exists(mo):
+                    logger.info("Building {}".format(mo))
+                    try:
+                        subprocess.call(["msgfmt", "--check-format", "-o", mo, po])
+                    except FileNotFoundError:
+                        logger.warning("msgfmt is not installed, cannot build translations for {}".format(plugin))
+                        break
+
         # Check for package.json in public directory
         # and run npm install if needed
         if plugin.path_exists("public", "package.json") and not plugin.path_exists("public", "node_modules") and not plugin.path_exists("public", "build"):

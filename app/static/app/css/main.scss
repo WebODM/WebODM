@@ -142,8 +142,22 @@ a:focus{
         }
     }
 
+    .dropdown-user > li > a{
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+
+    .dropdown-user > li:last-child > a{
+        padding-bottom: 6px;
+    }
+
+    .dropdown-user .user-profile div.info-item{
+        padding-top: 5px;
+        padding-bottom: 1px;
+    }
+
     .language-select{
-        padding: 3px 20px;
+        padding: 3px 8px;
         display: flex;
         align-items: center;
 

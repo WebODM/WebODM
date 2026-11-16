@@ -1,7 +1,8 @@
 {% extends "app/plugins/templates/base.html" %}
+{% load i18n %}
 
 {% block content %}
-Hello world!
+{% trans "Hello world!" %}
 
 <form>
     {% csrf_token %}

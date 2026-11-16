@@ -21,6 +21,7 @@ from app.plugins import get_plugin_by_name
 from app.plugins import sync_plugin_db, get_plugins_persistent_path
 from app.plugins.data_store import InvalidDataStoreValue
 from app.plugins.pyutils import parse_requirements, compute_file_md5, requirements_installed
+from app.plugins.functions import build_plugins
 from .classes import BootTestCase
 
 
@@ -154,6 +155,28 @@ class TestPlugins(BootTestCase):
         # Current plugin test
         self.assertEqual(test_plugin.get_current_plugin_test(), test_plugin)
 
+
+    def test_plugin_locale(self):
+        mo_file = os.path.join(settings.BASE_DIR, 'coreplugins', 'test', 'locale', 'it', 'LC_MESSAGES', 'django.mo')
+        if os.path.exists(mo_file):
+            os.remove(mo_file)
+
+        build_plugins()
+
+        # .mo files are built
+        self.assertTrue(os.path.exists(mo_file))
+
+        enable_plugin("test")
+        client = Client()
+
+        # Check default locale
+        res = client.get('/plugins/test/app_mountpoint/')
+        self.assertContains(res, "Hello world!")
+
+        # Translation also works
+        res = client.get('/plugins/test/app_mountpoint/', HTTP_ACCEPT_LANGUAGE='it')
+        self.assertContains(res, "Ciao mondo!")
+        self.assertNotContains(res, "Hello world!")
 
     def test_plugin_datastore(self):
         enable_plugin("test")
