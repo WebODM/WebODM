@@ -888,7 +888,7 @@ class ProjectListItem extends React.Component {
                     className={"btn btn-danger btn-sm " + (!this.state.upload.uploading ? "hide" : "")} 
                     onClick={this.handleCancel}>
               <i className="glyphicon glyphicon-remove-circle"></i>
-              Cancel Upload
+              {_("Cancel Upload")}
             </button> 
           </div>
 

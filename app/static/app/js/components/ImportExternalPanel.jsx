@@ -5,7 +5,7 @@ import Dropzone from '../vendor/dropzone';
 import csrf from '../django/csrf';
 import ErrorMessage from './ErrorMessage';
 import UploadProgressBar from './UploadProgressBar';
-import { _ } from '../classes/gettext';
+import { _, interpolate } from '../classes/gettext';
 import $ from 'jquery';
 
 const ASSET_TYPES = [
@@ -150,7 +150,7 @@ class ImportExternalPanel extends React.Component {
   };
 
   defaultTaskName = () => {
-    return `Task of ${new Date().toISOString()}`;
+    return interpolate(_("Task of %(date)s"), { date: new Date().toISOString() });
   }
 
   initTask = () => {

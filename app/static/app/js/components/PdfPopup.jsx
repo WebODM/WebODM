@@ -35,7 +35,7 @@ class PdfPopup extends React.Component {
                     <button 
                         className="btn-close btn btn-secondary btn-sm" 
                         onClick={this.props.onClose}
-                        aria-label="Close"
+                        aria-label={_("Close")}
                     >
                         <i className="fa fa-times"></i>
                     </button>

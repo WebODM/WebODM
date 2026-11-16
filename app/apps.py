@@ -1,9 +1,10 @@
 import os
 from django.apps import AppConfig
+from django.utils.translation import gettext_lazy as _
 
 class MainConfig(AppConfig):
     name = 'app'
-    verbose_name = 'Application'
+    verbose_name = _('Application')
 
     def ready(self):
         from webodm import settings

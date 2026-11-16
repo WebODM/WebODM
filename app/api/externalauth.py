@@ -5,6 +5,7 @@ from rest_framework import exceptions, permissions, parsers
 from rest_framework.response import Response
 from app.auth.backends import get_user_from_external_auth_response, cluster_mismatch
 import requests
+from django.utils.translation import gettext as _
 from webodm import settings
 
 class ExternalTokenAuth(APIView):
@@ -33,7 +34,7 @@ class ExternalTokenAuth(APIView):
                 elif cluster_mismatch(res) and settings.CLUSTER_URL != '':
                     return Response({'redirect': settings.CLUSTER_URL % res['cluster_id']})
                 else:
-                    return Response({'error': 'Invalid credentials'})
+                    return Response({'error': _('Invalid credentials')})
             else:
                 return Response({'error': res.get('message', 'Invalid external server response')})
         except Exception as e:

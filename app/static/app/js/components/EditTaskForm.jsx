@@ -40,7 +40,7 @@ class EditTaskForm extends React.Component {
       error: "",
       presetError: "",
       presetActionPerforming: false,
-      namePlaceholder: typeof props.suggestedTaskName === "string" ? props.suggestedTaskName : (props.task !== null ? (props.task.name || "") : "Task of " + (new Date()).toISOString()),
+      namePlaceholder: typeof props.suggestedTaskName === "string" ? props.suggestedTaskName : (props.task !== null ? (props.task.name || "") : interpolate(_("Task of %(date)s"), { date: (new Date()).toISOString() })),
       name: typeof props.suggestedTaskName === "string" ? props.suggestedTaskName : (props.task !== null ? (props.task.name || "") : ""),
       loadedProcessingNodes: false,
       loadedPresets: false,
