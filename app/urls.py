@@ -6,12 +6,16 @@ from .plugins.views import app_view_handler, root_url_patterns
 
 from app.boot import boot
 from webodm import settings
-from app.plugins import sync_plugin_db
+from app.plugins import sync_plugin_db, register_plugin_locales
 
 # Test cases call boot() independently
 # Also don't execute boot with celery workers
 if not settings.WORKER_RUNNING and not settings.TESTING:
     boot()
+
+# All production processes need this
+if not settings.TESTING:
+    register_plugin_locales()
 
 # During testing, boot() is not called (see above)
 # but we need to know which plugins are available to mount the proper

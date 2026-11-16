@@ -326,20 +326,19 @@ class PluginAdmin(admin.ModelAdmin):
                         for chunk in iter(lambda: f.read(1024 * 1024), b''):
                             h.update(chunk)
                     if h.hexdigest() != sha256:
-                        raise ValueError("Checksum mismatch. The downloaded file might be corrupted.")
+                        raise ValueError(_("Checksum mismatch. The downloaded file might be corrupted."))
 
                 with zipfile.ZipFile(tmp_zip_path, "r") as zip_h:
                     zip_h.extractall(tmp_extract_path)
 
                 folders = os.listdir(tmp_extract_path)
                 if len(folders) != 1:
-                    raise ValueError("The plugin has more than 1 root directory (it should have only one)")
+                    raise ValueError(_("The plugin has more than 1 root directory (it should have only one)"))
 
                 plugin_name = folders[0]
                 plugin_path = os.path.join(tmp_extract_path, plugin_name)
                 if not valid_plugin(plugin_path):
-                    raise ValueError(
-                        "This doesn't look like a plugin. Are plugin.py and manifest.json in the proper place?")
+                    raise ValueError(_("This doesn't look like a plugin. Are plugin.py and manifest.json in the proper place?"))
 
                 try:
                     with open(os.path.join(plugin_path, "manifest.json")) as f:
@@ -350,9 +349,7 @@ class PluginAdmin(admin.ModelAdmin):
                 dest_path = get_plugins_persistent_path(plugin_name)
                 if os.path.exists(dest_path):
                     if not upgrade:
-                        raise ValueError(
-                            "A plugin with the name {} already exist. Please remove it before uploading one with the same name.".format(
-                                plugin_name))
+                        raise ValueError(_("A plugin with the name %(plugin)s already exists. Please remove it before uploading one with the same name.") % {'plugin': plugin_name})
                     tmp_old_path = tempfile.mkdtemp('plugin_old', dir=settings.MEDIA_TMP)
                     shutil.move(dest_path, tmp_old_path)
 
@@ -372,6 +369,9 @@ class PluginAdmin(admin.ModelAdmin):
                     message = _("Plugin %(plugin)s updated successfully. Please restart WebODM to apply the changes.") % {'plugin': plugin_name}
                 else:
                     message = _("%(plugin)s installed successfully") % {'plugin': display_name}
+                    p = get_plugin_by_name(plugin_name, only_active=False)
+                    if p is not None and p.requires_restart():
+                        message = _("Restart required. Please restart WebODM to enable %(plugin)s") % {'plugin': display_name}
                 success = True
                 level = messages.INFO
             except Exception as e:
@@ -387,10 +387,11 @@ class PluginAdmin(admin.ModelAdmin):
             message = _("You need to upload a zip file")
             level = messages.ERROR
 
+        if success or not as_json:
+            messages.add_message(request, level, message)
         if as_json:
             return JsonResponse({'success': success, 'message': str(message)})
 
-        messages.add_message(request, level, message)
         return HttpResponseRedirect(reverse('admin:app_plugin_changelist'))
 
     def plugin_actions(self, obj):
@@ -399,7 +400,7 @@ class PluginAdmin(admin.ModelAdmin):
             '<a class="button" href="{}" {}>{}</a>&nbsp;'
             '<a class="button" href="{}" {}>{}</a>'
             + (
-                '&nbsp;<a class="button" href="{}" onclick="return confirm(\'Are you sure you want to delete {}?\')"><i class="fa fa-trash"></i></a>' if not plugin.is_persistent() else '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;')
+                '&nbsp;<a class="button" href="{}" onclick="return confirm({})"><i class="fa fa-trash"></i></a>' if not plugin.is_persistent() else '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;')
             ,
             reverse('admin:plugin-disable', args=[obj.pk]) if obj.enabled else '#',
             'disabled' if not obj.enabled else '',
@@ -408,7 +409,7 @@ class PluginAdmin(admin.ModelAdmin):
             'disabled' if obj.enabled else '',
             _('Enable'),
             reverse('admin:plugin-delete', args=[obj.pk]),
-            obj.name
+            json.dumps(_("Are you sure you want to delete %(plugin)s?") % {'plugin': obj.name})
         )
 
     plugin_actions.short_description = _('Actions')

@@ -17,6 +17,5 @@ class MainConfig(AppConfig):
         def watch_templates(sender, **kwargs):
             sender.watch_dir(os.path.join(settings.BASE_DIR, 'app', 'templates'), '**/*')
             sender.watch_dir(os.path.join(settings.BASE_DIR, 'coreplugins'), '*/templates/**/*')
-            sender.watch_dir(os.path.join(settings.MEDIA_ROOT, 'plugins'), '*/templates/**/*')
 
         autoreload.autoreload_started.connect(watch_templates, weak=False)
