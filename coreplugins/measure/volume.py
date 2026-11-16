@@ -116,7 +116,7 @@ def calc_volume(input_dem, pts=None, pts_epsg=None, geojson_polygon=None, decima
             # plt.title('Debug')
             # plt.show()
 
-            return {'output': np.abs(np.round(volume, decimals=decimals))}
+            return {'output': abs(round(float(volume), decimals))}
     except Exception as e:
         return {'error': str(e)}
 
