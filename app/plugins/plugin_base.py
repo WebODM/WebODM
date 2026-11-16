@@ -217,7 +217,7 @@ class PluginBase(ABC):
         Whether the plugin requires an app restart to
         function properly
         """
-        return len(self.root_mount_points()) > 0
+        return len(self.root_mount_points()) > 0 or self.path_exists("locale")
 
     def main_menu(self):
         """
