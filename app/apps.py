@@ -1,9 +1,10 @@
 import os
 from django.apps import AppConfig
+from django.utils.translation import gettext_lazy as _
 
 class MainConfig(AppConfig):
     name = 'app'
-    verbose_name = 'Application'
+    verbose_name = _('Application')
 
     def ready(self):
         from webodm import settings
@@ -17,6 +18,5 @@ class MainConfig(AppConfig):
         def watch_templates(sender, **kwargs):
             sender.watch_dir(os.path.join(settings.BASE_DIR, 'app', 'templates'), '**/*')
             sender.watch_dir(os.path.join(settings.BASE_DIR, 'coreplugins'), '*/templates/**/*')
-            sender.watch_dir(os.path.join(settings.MEDIA_ROOT, 'plugins'), '*/templates/**/*')
 
         autoreload.autoreload_started.connect(watch_templates, weak=False)

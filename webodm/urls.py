@@ -22,6 +22,7 @@ from django.contrib.auth.views import redirect_to_login
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
 from . import settings
 from django.views.static import serve
 
@@ -29,7 +30,7 @@ from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 
-admin.site.site_header = 'WebODM Administration'
+admin.site.site_header = _('WebODM Administration')
 
 def admin_login(request, extra_context=None):
     if request.user.is_authenticated:

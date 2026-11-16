@@ -143,7 +143,7 @@ def processing_node(request, processing_node_id):
     
     if settings.DEPRECATION_WARNINGS and pn.engine is not None and pn.engine == 'odm':
         messages.add_message(request, messages.constants.WARNING, format_html(
-            _('%(node)s is deprecated might stop working in a future version. See the %(link_start)s migration guide %(link_end)s to upgrade.' % {'node': pn, 'link_start': '<a href="https://docs.webodm.org/tutorials/opendronemap-migration-guide/" target="_blank">', 'link_end': '</a>'}),
+            _('%(node)s is deprecated might stop working in a future version. See the %(link_start)s migration guide %(link_end)s to upgrade.') % {'node': pn, 'link_start': '<a href="https://docs.webodm.org/tutorials/opendronemap-migration-guide/" target="_blank">', 'link_end': '</a>'},
         ))
 
     if not pn.update_node_info():

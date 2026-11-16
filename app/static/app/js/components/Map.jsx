@@ -450,8 +450,8 @@ class Map extends React.Component {
             popup.innerHTML = `<div class="title">
                                     ${name}
                                 </div>
-                                <div class="popup-opacity-slider">Opacity: <input id="layerOpacity" class="opacity" type="range" value="${layer.options.opacity}" min="0" max="1" step="0.01" /></div>
-                                <div>Bounds: [${layer.options.bounds.toBBoxString().split(",").join(", ")}]</div>
+                                <div class="popup-opacity-slider">${_("Opacity:")} <input id="layerOpacity" class="opacity" type="range" value="${layer.options.opacity}" min="0" max="1" step="0.01" /></div>
+                                <div>${_("Bounds:")} [${layer.options.bounds.toBBoxString().split(",").join(", ")}]</div>
                                 <div class="popup-download-assets loading">
                                   <i class="fa loading fa-spin fa-sync fa-spin fa-fw"></i>
                                 </div>

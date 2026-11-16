@@ -2,6 +2,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import Clipboard from 'clipboard';
 import '../css/ClipboardInput.scss';
+import { _ } from '../classes/gettext';
 
 class ClipboardInput extends React.Component{
   constructor(props){
@@ -34,7 +35,7 @@ class ClipboardInput extends React.Component{
           onBlur={() => { this.setState({showCopied: false}); }}
          />
         <div style={{position: 'relative', 'width': '100%'}}>
-          <div className={"copied theme-background-success " + (this.state.showCopied ? "show" : "")}>Copied to clipboard</div>
+          <div className={"copied theme-background-success " + (this.state.showCopied ? "show" : "")}>{_("Copied to clipboard")}</div>
         </div>
     </div>);
   }       

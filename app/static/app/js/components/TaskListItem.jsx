@@ -263,7 +263,7 @@ class TaskListItem extends React.Component {
 
   optionsToList(options){
     if (!Array.isArray(options)) return "";
-    else if (options.length === 0) return "Default";
+    else if (options.length === 0) return _("Default");
     else {
       return options.map(opt => {
         if (opt.name === "boundary") return `${opt.name}:geojson`;
@@ -439,7 +439,7 @@ class TaskListItem extends React.Component {
           })
           .fail(() => {
             this.setState({
-              actionError: interpolate(_("Cannot restart task from (stage)s."), { stage: value || "the start"}),
+              actionError: interpolate(_("Cannot restart task from %(stage)s."), { stage: value || _("the start")}),
               actionButtonsDisabled: false
             });
           });

@@ -179,6 +179,10 @@ def register_plugins():
             disable_plugin(plugin.get_name())
             logger.warning("Cannot register {}: {}".format(plugin, str(e)))
 
+def register_plugin_locales():
+    for plugin in get_active_plugins():
+        plugin.register_locale()
+
 def valid_plugin(plugin_path):
     initpy_path = os.path.join(plugin_path, "__init__.py")
     pluginpy_path = os.path.join(plugin_path, "plugin.py")
