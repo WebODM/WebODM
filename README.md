@@ -4,7 +4,7 @@
 
 > **Now with Django 5.2 LTS, Postgres 18, Valkey 9.1 and faster dynamic tiler**
 
-A user-friendly, commercial grade software for drone image processing. Generate georeferenced maps, point clouds, elevation models, textured 3D models and gaussian splats from aerial images. It supports multiple engines for processing, currently [ODX](https://github.com/WebODM/ODX), [MicMac](https://github.com/OpenDroneMap/NodeMICMAC/) and [LGT](https://webodm.net/lgt).
+A user-friendly, commercial grade software for drone image processing. Generate georeferenced maps, point clouds, elevation models, textured 3D models and gaussian splats from aerial images. It supports multiple engines for processing, currently [ODX](https://github.com/WebODM/ODX) and [LGT](https://webodm.net/lgt).
 
 ![image](https://github.com/user-attachments/assets/aa1c4340-728d-46c3-a8e1-53bcb4851adc)
 

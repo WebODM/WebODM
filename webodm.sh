@@ -124,10 +124,6 @@ case $key in
     export WO_DEFAULT_NODES=0
     shift # past argument
     ;;
-    --with-micmac)
-    load_micmac_node=true
-    shift # past argument
-    ;;
     --detached)
     detached=true
     shift # past argument
@@ -196,7 +192,6 @@ usage(){
   echo "	--db-dir	<path>	Path where the Postgres db data will be stored to (default: $DEFAULT_DB_DIR (docker named volume))"
   echo "	--node-dir	<path>	Path where temporary files will be stored during processing when using the default node (default: docker container storage)"
   echo "	--default-nodes	Whether to create a processing node attached to WebODM on startup (default: $DEFAULT_NODES)"
-  echo "	--with-micmac	Create a NodeMICMAC node attached to WebODM on startup. Experimental! (default: disabled)"
   echo "	--ssl	Enable SSL and automatically request and install a certificate from letsencrypt.org. (default: $DEFAULT_SSL)"
   echo "	--ssl-key	<path>	Manually specify a path to the private key file (.pem) to use with nginx to enable SSL (default: None)"
   echo "	--ssl-cert	<path>	Manually specify a path to the certificate file (.pem) to use with nginx to enable SSL (default: None)"
@@ -442,10 +437,6 @@ start(){
 		fi
     fi
 
-    if [[ $load_micmac_node = true ]]; then
-        command+=" -f docker-compose.nodemicmac.yml"
-    fi
-
     if [[ $dev_mode = true ]]; then
         command+=" -f docker-compose.dev.yml"
     fi
@@ -526,7 +517,7 @@ down(){
 		command+=" -f docker-compose.nodeodx.yml"
 	fi
 
-	command+=" -f docker-compose.nodemicmac.yml down --remove-orphans"
+	command+=" down --remove-orphans"
 
 	run "${command}"
 }
@@ -616,10 +607,6 @@ update(){
 		fi
 	fi
 
-	if [[ $load_micmac_node = true ]]; then
-		command+=" -f docker-compose.nodemicmac.yml"
-	fi
-
 	command+=" pull"
 	run "$command"
 }
@@ -639,7 +626,7 @@ elif [[ $1 = "stop" ]]; then
 		command+=" -f docker-compose.nodeodx.yml"
 	fi
  
-	command+=" -f docker-compose.nodemicmac.yml stop"
+	command+=" stop"
 	run "${command}"
 elif [[ $1 = "restart" ]]; then
 	environment_check
