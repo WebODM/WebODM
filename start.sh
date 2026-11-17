@@ -69,10 +69,6 @@ if [[ "$WO_DEFAULT_NODES" > 0 ]]; then
     python manage.py addnode node-odx-1 3000 --label node-odx-1
 fi
 
-if [[ "$WO_CREATE_MICMAC_PNODE" = "YES" ]]; then
-    python manage.py addnode node-micmac-1 3000
-fi
-
 export WO_HOST="${WO_HOST:=localhost}"
 export WO_PORT="${WO_PORT:=8000}"
 
