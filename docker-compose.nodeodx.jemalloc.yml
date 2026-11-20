@@ -1,0 +1,8 @@
+# Chaining this file to the main docker-compose file makes
+# the default processing node use jemalloc as its memory allocator.
+# This is experimental.
+
+services:
+  node-odx-1:
+    environment:
+      - ODX_JEMALLOC=YES
