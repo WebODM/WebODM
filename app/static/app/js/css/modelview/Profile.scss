@@ -1,0 +1,154 @@
+.mv-profile{
+    position: absolute;
+    z-index: 5;
+    left: 20px;
+    top: 92px;
+    width: 420px;
+    height: 310px;
+    display: flex;
+    flex-direction: column;
+    border-radius: 4px;
+    background: #1f282c;
+    color: #efeff0;
+    font-size: 12px;
+    overflow: hidden;
+
+    button:focus{
+        outline: none;
+    }
+
+    .mv-profile-header{
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 44px;
+        padding: 8px 12px;
+        background: #33434a;
+        text-shadow: none;
+        cursor: move;
+
+        .mv-panel-btn{
+            flex: none;
+            width: 30px;
+            height: 30px;
+            border: 0;
+            border-radius: 4px;
+            background: transparent;
+            color: #fff;
+            font-size: 14px;
+
+            &:hover{
+                background: rgba(255, 255, 255, 0.15);
+            }
+            &:focus{
+                outline: none;
+            }
+        }
+
+        .mv-panel-btn.active{
+            background: #5b737d;
+        }
+    }
+
+    .mv-context-menu{
+        position: absolute;
+        z-index: 2;
+        min-width: 140px;
+        padding: 4px 0;
+        border-radius: 4px;
+        background: #111a1d;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+
+        & > div{
+            padding: 5px 10px;
+            cursor: pointer;
+            &:hover{
+                background: #444;
+            }
+        }
+    }
+
+    .mv-export-menu{
+        top: 40px;
+        right: 12px;
+    }
+
+    .mv-profile-title{
+        flex: 1 1 auto;
+        font-size: 13px;
+        font-weight: bold;
+    }
+
+    .mv-profile-body{
+        flex: 1 1 auto;
+        min-height: 0;
+        position: relative;
+        margin: 8px 8px 0 8px;
+        user-select: none;
+    }
+
+    #profileSVG{
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        fill: #efeff0;
+    }
+
+    #profileCanvasContainer{
+        position: absolute;
+        left: 41px;
+        top: 0;
+        width: calc(100% - 41px);
+        height: calc(100% - 20px);
+    }
+
+    #profileSelectionProperties{
+        position: absolute;
+        left: calc(50% + 20px);
+        bottom: 28px;
+        transform: translateX(-50%);
+        white-space: nowrap;
+        padding: 5px;
+        border: 1px solid #44575f;
+        border-radius: 4px;
+        background: #111a1d;
+        color: #fff;
+        opacity: 0.9;
+        user-select: text;
+    }
+
+    .mv-profile-footer{
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 32px;
+        padding: 0 8px;
+        border-top: 1px solid #44575f;
+
+        button{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            border: 0;
+            border-radius: 4px;
+            background: transparent;
+            color: #fff;
+
+            &:hover{
+                background: rgba(255, 255, 255, 0.15);
+            }
+
+            .mv-icon{
+                width: 16px;
+                height: 16px;
+            }
+        }
+    }
+}

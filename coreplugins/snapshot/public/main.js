@@ -91,7 +91,7 @@
       return doc;
     });
   registerApiActionButton(PluginsAPI.ModelView.addActionButton, function(options){
-      var modelTitle = options.viewer.renderArea.parentElement.parentElement.parentElement.parentElement.querySelector(".model-title");
+      var modelTitle = options.viewer.renderArea.closest(".model-view").querySelector(".model-title");
       return modelTitle ? modelTitle.innerText.trim() : "";
     }, function(options){
       return options.viewer.renderArea;

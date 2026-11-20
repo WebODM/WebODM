@@ -54161,6 +54161,14 @@
 			return Math.sqrt(areaVectorX * areaVectorX + areaVectorY * areaVectorY + areaVectorZ * areaVectorZ) / 2.0;
 		};
 
+		getPerpendicularDistance () {
+			if (this.points.length < 2 || !this.normal) {
+				return 0;
+			}
+
+			return Math.abs(new Vector3().subVectors(this.points[1].position, this.points[0].position).dot(this.normal));
+		};
+
 		getTotalDistance () {
 			if (this.points.length === 0) {
 				return 0;
@@ -54238,6 +54246,11 @@
 					
 					let positions = position.toArray();
 					let msg = `${Utils.addCommas(positions[0].toFixed(3))} / ${Utils.addCommas(positions[1].toFixed(3))} / ${Utils.addCommas((positions[2] / window.viewer.lengthUnit.unitspermeter * window.viewer.lengthUnitDisplay.unitspermeter).toFixed(3))}`;
+					if(this.display === 'latlon'){
+						msg = this.latlon && this.latlon.x === positions[0] && this.latlon.y === positions[1]
+							? `${this.latlon.lon.toFixed(9)} / ${this.latlon.lat.toFixed(9)} / ${Utils.addCommas((positions[2] / window.viewer.lengthUnit.unitspermeter * window.viewer.lengthUnitDisplay.unitspermeter).toFixed(3))}`
+							: '...';
+					}
 					coordinateLabel.setText(msg);
 
 					coordinateLabel.visible = this.showCoordinates;
@@ -54456,7 +54469,117 @@
 
 				let txtArea = Utils.addCommas(area.toFixed(1));
 				let msg =  `${txtArea} ${suffix}\u00B2`;
-				this.areaLabel.setText(msg);
+				this.areaLabel.setText(this.kind === 'roof' && this.roof ? `${msg} \u00B7 ${this.roof.label}` : msg);
+
+				if(this.kind === 'perpendicular' && this.points.length === 2){
+					const p1 = this.points[0].position;
+					const p2 = this.points[1].position;
+					const camera = window.viewer.scene.getActiveCamera();
+
+					if(!this.normal || !this.normalAt.equals(p1)){
+						const toCamera = new Vector3().subVectors(camera.position, p1);
+						const radius = toCamera.length() * 0.02;
+						const radius2 = radius * radius;
+						let n = 0, sx = 0, sy = 0, sz = 0, xx = 0, xy = 0, xz = 0, yy = 0, yz = 0, zz = 0;
+
+						for(const pointcloud of window.viewer.scene.pointclouds){
+							for(const node of pointcloud.visibleNodes){
+								const attribute = node.geometryNode.geometry && node.geometryNode.geometry.attributes.position;
+								if(!attribute || !node.sceneNode) continue;
+
+								const positions = attribute.array;
+								const m = node.sceneNode.matrixWorld.elements;
+								const local = p1.clone().applyMatrix4(new Matrix4().copy(node.sceneNode.matrixWorld).invert());
+
+								for(let i = 0; i < positions.length; i += 3){
+									const dx = positions[i] - local.x;
+									const dy = positions[i + 1] - local.y;
+									const dz = positions[i + 2] - local.z;
+									if(dx * dx + dy * dy + dz * dz > radius2) continue;
+
+									const x = m[0] * dx + m[4] * dy + m[8] * dz;
+									const y = m[1] * dx + m[5] * dy + m[9] * dz;
+									const z = m[2] * dx + m[6] * dy + m[10] * dz;
+									n++;
+									sx += x; sy += y; sz += z;
+									xx += x * x; xy += x * y; xz += x * z;
+									yy += y * y; yz += y * z; zz += z * z;
+								}
+							}
+						}
+
+						const normal = toCamera.clone().normalize();
+						if(n >= 5){
+							sx /= n; sy /= n; sz /= n;
+							xx = xx / n - sx * sx; xy = xy / n - sx * sy; xz = xz / n - sx * sz;
+							yy = yy / n - sy * sy; yz = yz / n - sy * sz; zz = zz / n - sz * sz;
+							const trace = xx + yy + zz;
+
+							for(let i = 0; i < 50 && trace > 0; i++){
+								normal.set(
+									(trace - xx) * normal.x - xy * normal.y - xz * normal.z,
+									-xy * normal.x + (trace - yy) * normal.y - yz * normal.z,
+									-xz * normal.x - yz * normal.y + (trace - zz) * normal.z
+								).normalize();
+							}
+							if(normal.dot(toCamera) < 0) normal.negate();
+						}
+
+						this.normal = normal;
+						this.normalAt = p1.clone();
+					}
+
+					if(!this.perpendicularEdge){
+						const lineGeometry = new LineGeometry();
+						lineGeometry.setPositions([0, 0, 0, 0, 0, 0]);
+						const lineMaterial = new LineMaterial({
+							color: 0xffffff,
+							dashed: true,
+							dashSize: 1,
+							gapSize: 1,
+							linewidth: 2,
+							resolution: new Vector2(1000, 1000),
+						});
+						lineMaterial.depthTest = false;
+						lineMaterial.defines.USE_DASH = "";
+						this.perpendicularEdge = new Line2(lineGeometry, lineMaterial);
+						this.add(this.perpendicularEdge);
+					}
+
+					const offset = this.normal.clone().multiplyScalar(new Vector3().subVectors(p2, p1).dot(this.normal));
+					const foot = p1.clone().add(offset);
+					const size = window.viewer.renderer.getSize(new Vector2());
+
+					const edge = this.edges[0];
+					edge.geometry.setPositions([0, 0, 0, ...offset.toArray()]);
+					edge.geometry.computeBoundingSphere();
+					edge.computeLineDistances();
+
+					const guide = this.edges[1];
+					const reach = this.normal.clone().multiplyScalar(camera.position.distanceTo(p1) * 10);
+					guide.position.copy(p1);
+					guide.geometry.setPositions([...reach.clone().negate().toArray(), ...reach.toArray()]);
+					guide.geometry.computeBoundingSphere();
+					guide.computeLineDistances();
+					guide.material.linewidth = 1;
+					guide.visible = !!window.viewer.inputHandler.drag && window.viewer.inputHandler.drag.object === this.spheres[1];
+
+					const dashed = this.perpendicularEdge;
+					dashed.position.copy(foot);
+					dashed.geometry.setPositions([0, 0, 0, ...new Vector3().subVectors(p2, foot).toArray()]);
+					dashed.geometry.computeBoundingSphere();
+					dashed.computeLineDistances();
+					dashed.material.resolution.set(size.width, size.height);
+					dashed.material.dashScale = Utils.projectedRadius(1, camera, camera.position.distanceTo(foot), size.width, size.height) / 8;
+
+					let distance = offset.length();
+					if(this.lengthUnit != null && this.lengthUnitDisplay != null){
+						distance = distance / this.lengthUnit.unitspermeter * this.lengthUnitDisplay.unitspermeter;
+					}
+					this.areaLabel.visible = true;
+					this.areaLabel.position.copy(p1).add(offset.multiplyScalar(0.5));
+					this.areaLabel.setText(`${Utils.addCommas(distance.toFixed(2))} ${suffix}`);
+				}
 			}
 
 			// this.updateAzimuth();
@@ -55724,7 +55847,7 @@
 			super();
 
 			this.scene = null;
-			this._title = args.title || 'No Title';
+			this._title = args.title != null ? args.title : 'No Title';
 			this._description = args.description || '';
 			this._link = args.link || '';
 			this.offset = new Vector3();
@@ -55759,18 +55882,14 @@
 			this.parent = null;
 			this.boundingBox = new Box3();
 
-			let iconClose = exports.resourcePath + '/icons/close.svg';
-
 			this.domElement = $(`
 			<div class="annotation" oncontextmenu="return false;">
 				<div class="annotation-titlebar">
 					<span class="annotation-label"></span>
 				</div>
 				<div class="annotation-description">
-					<span class="annotation-description-close">
-						<img src="${iconClose}" width="16px">
-					</span>
-					<span class="annotation-description-content">${this._description}</span>
+					<span class="annotation-description-content"></span>
+					<a class="annotation-link" href="javascript:void(0)"></a>
 				</div>
 			</div>
 		`);
@@ -55779,16 +55898,62 @@
 			this.elTitle = this.elTitlebar.find('.annotation-label');
 			this.elTitle.text(this._title);
 			this.elDescription = this.domElement.find('.annotation-description');
-			this.elDescriptionClose = this.elDescription.find('.annotation-description-close');
-			// this.elDescriptionContent = this.elDescription.find(".annotation-description-content");
+			this.elDescriptionContent = this.elDescription.find('.annotation-description-content');
+			this.elDescriptionContent.text(this._description);
 			this.elLink = this.domElement.find('.annotation-link');
 			this.elLink.text(this._link);
+
+			this.edit = el => {
+				el.attr('contenteditable', 'plaintext-only');
+				el.focus();
+				document.getSelection().selectAllChildren(el[0]);
+			};
+
+			for (let [el, key] of [[this.elTitle, 'title'], [this.elDescriptionContent, 'description']]) {
+				el.on('dblclick', () => {
+					if (!el.attr('contenteditable')) this.edit(el);
+				});
+				el.on('input', () => { this[key] = el.text(); });
+				el.on('blur', () => {
+					el.removeAttr('contenteditable');
+					if (key === 'title' && !this._title.trim()) this.title = typeof gettext !== 'undefined' ? gettext('Annotation') : 'Annotation';
+				});
+				el.on('keyup', e => e.stopPropagation());
+				el.on('keydown', e => {
+					e.stopPropagation();
+					if (e.keyCode === 27 || (e.keyCode === 13 && key === 'title')) {
+						e.preventDefault();
+						el.blur();
+					}
+				});
+			}
 
 			this.clickTitle = () => {
 				if(this.hasView()){
 					this.moveHere(this.scene.getActiveCamera());
 				}
 				this.dispatchEvent({type: 'click', target: this});
+
+				if (!this.descriptionVisible && (this._description || this._link)) {
+					this.descriptionVisible = true;
+					this.elDescription.css('display', 'block');
+					this.domElement.css('opacity', '1');
+
+					const close = e => {
+						if (this.domElement[0].contains(e.target)) return;
+						document.removeEventListener('mousedown', close, true);
+						this.descriptionVisible = false;
+						this.elDescription.css('display', 'none');
+						this.setHighlighted(false);
+					};
+					document.addEventListener('mousedown', close, true);
+				}
+			};
+
+			this.elTitle.click(this.clickTitle);
+
+			this.elLink.click(e => {
+				e.preventDefault();
 
 				if (this._link){
 					try{
@@ -55807,9 +55972,7 @@
 						// pass
 					}
 				}
-			};
-
-			this.elTitle.click(this.clickTitle);
+			});
 
 			this.actions = this.actions.map(a => {
 				if (a instanceof Action) {
@@ -55832,15 +55995,10 @@
 				elButton.click(() => action.onclick({annotation: this}));
 			}
 
-			this.elDescriptionClose.hover(
-				e => this.elDescriptionClose.css('opacity', '1'),
-				e => this.elDescriptionClose.css('opacity', '0.5')
-			);
-			this.elDescriptionClose.click(e => this.setHighlighted(false));
-			// this.elDescriptionContent.html(this._description);
-
 			this.domElement.mouseenter(e => this.setHighlighted(true));
-			this.domElement.mouseleave(e => this.setHighlighted(false));
+			this.domElement.mouseleave(e => {
+				if (!this.descriptionVisible) this.setHighlighted(false);
+			});
 
 			this.domElement.on('touchstart', e => {
 				this.setHighlighted(!this.isHighlighted);
@@ -56079,8 +56237,7 @@
 			}
 
 			this._title = title;
-			this.elTitle.empty();
-			this.elTitle.text(this._title);
+			if (this.elTitle.text() !== title) this.elTitle.text(title);
 
 			this.dispatchEvent({
 				type: "annotation_changed",
@@ -56099,9 +56256,7 @@
 
 			this._description = description;
 
-			const elDescriptionContent = this.elDescription.find(".annotation-description-content");
-			elDescriptionContent.empty();
-			elDescriptionContent.text(this._description);
+			if (this.elDescriptionContent.text() !== description) this.elDescriptionContent.text(description);
 
 			this.dispatchEvent({
 				type: "annotation_changed",
@@ -56239,18 +56394,10 @@
 				this.domElement.css('opacity', '0.8');
 				this.elTitlebar.css('box-shadow', '0 0 5px #fff');
 				this.domElement.css('z-index', '1000');
-
-				if (this._description) {
-					this.descriptionVisible = true;
-					this.elDescription.fadeIn(1);
-					this.elDescription.css('position', 'relative');
-				}
 			} else {
 				this.domElement.css('opacity', '0.5');
 				this.elTitlebar.css('box-shadow', '');
 				this.domElement.css('z-index', '100');
-				this.descriptionVisible = false;
-				this.elDescription.css('display', 'none');
 			}
 
 			this.isHighlighted = highlighted;
@@ -56317,6 +56464,9 @@
 		};
 
 		dispose () {
+			if (this.marker && this.marker.parent) {
+				this.marker.parent.remove(this.marker);
+			}
 			if (this.domElement.parentElement) {
 				this.domElement.parentElement.removeChild(this.domElement);
 			}
@@ -57691,6 +57841,8 @@ uniform int clipTask;
 uniform int clipMethod;
 #if defined(num_clipboxes) && num_clipboxes > 0
 	uniform mat4 clipBoxes[num_clipboxes];
+	uniform vec2 clipSelected;
+	uniform vec2 clipHighlight;
 #endif
 
 #if defined(num_clipspheres) && num_clipspheres > 0
@@ -57699,7 +57851,7 @@ uniform int clipMethod;
 
 #if defined(num_clippolygons) && num_clippolygons > 0
 	uniform int uClipPolygonVCount[num_clippolygons];
-	uniform vec3 uClipPolygonVertices[num_clippolygons * 8];
+	uniform vec3 uClipPolygonVertices[num_clippolygons * max_clippolygon_vertices];
 	uniform mat4 uClipPolygonWVP[num_clippolygons];
 #endif
 
@@ -57713,6 +57865,7 @@ uniform float minSize;
 uniform float maxSize;
 
 uniform float uPCIndex;
+uniform float uFade;
 uniform float uOctreeSpacing;
 uniform float uNodeSpacing;
 uniform float uOctreeSize;
@@ -58376,7 +58529,7 @@ bool pointInClipPolygon(vec3 point, int polyIdx) {
 
 	int j = uClipPolygonVCount[polyIdx] - 1;
 	bool c = false;
-	for(int i = 0; i < 8; i++) {
+	for(int i = 0; i < max_clippolygon_vertices; i++) {
 		if(i == uClipPolygonVCount[polyIdx]) {
 			break;
 		}
@@ -58390,8 +58543,8 @@ bool pointInClipPolygon(vec3 point, int polyIdx) {
 		//verti.xy = verti.xy / verti.w * 0.5 + 0.5;
 		//vertj.xy = vertj.xy / vertj.w * 0.5 + 0.5;
 
-		vec3 verti = uClipPolygonVertices[polyIdx * 8 + i];
-		vec3 vertj = uClipPolygonVertices[polyIdx * 8 + j];
+		vec3 verti = uClipPolygonVertices[polyIdx * max_clippolygon_vertices + i];
+		vec3 vertj = uClipPolygonVertices[polyIdx * max_clippolygon_vertices + j];
 
 		if( ((verti.y > pointNDC.y) != (vertj.y > pointNDC.y)) && 
 			(pointNDC.x < (vertj.x-verti.x) * (pointNDC.y-verti.y) / (vertj.y-verti.y) + verti.x) ) {
@@ -58463,6 +58616,8 @@ void doClipping(){
 
 	int clipVolumesCount = 0;
 	int insideCount = 0;
+	bool insideSelected = false;
+	bool insideHighlight = false;
 
 	#if defined(num_clipboxes) && num_clipboxes > 0
 		for(int i = 0; i < num_clipboxes; i++){
@@ -58471,9 +58626,19 @@ void doClipping(){
 			inside = inside && -0.5 <= clipPosition.y && clipPosition.y <= 0.5;
 			inside = inside && -0.5 <= clipPosition.z && clipPosition.z <= 0.5;
 
-			insideCount = insideCount + (inside ? 1 : 0);
-			clipVolumesCount++;
-		}	
+			if(inside && float(i) >= clipSelected.x && float(i) <= clipSelected.y) insideSelected = true;
+			if(float(i) >= clipHighlight.x){
+				if(inside) insideHighlight = true;
+			}else{
+				insideCount = insideCount + (inside ? 1 : 0);
+				clipVolumesCount++;
+			}
+		}
+
+		if(insideHighlight && clipHighlight.y > 0.5){
+			vColor.r += 0.5;
+			if(insideSelected) vColor.g += 0.5;
+		}
 	#endif
 
 	#if defined(num_cropvertices) && num_cropvertices > 0
@@ -58497,6 +58662,8 @@ void doClipping(){
 
 	bool insideAny = insideCount > 0;
 	bool insideAll = (clipVolumesCount > 0) && (clipVolumesCount == insideCount);
+
+	if(clipVolumesCount == 0) return;
 
 	if(clipMethod == CLIPMETHOD_INSIDE_ANY){
 		if(insideAny && clipTask == CLIPTASK_HIGHLIGHT){
@@ -58648,6 +58815,14 @@ void main() {
 		}
 
 	#endif
+
+	if(uFade < 1.0){
+		float fadeSeed = fract(sin(dot(position.xyz, vec3(39.346, 11.135, 83.155))) * 43758.5453);
+
+		if(uFade <= fadeSeed){
+			gl_Position = vec4(100.0, 100.0, 100.0, 1.0);
+		}
+	}
 }
 `;
 
@@ -61059,7 +61234,7 @@ void main() {
 			let height = Math.ceil(getVal(params.height, size.height));
 
 			let pointSizeType = getVal(params.pointSizeType, this.material.pointSizeType);
-			let pointSize = getVal(params.pointSize, this.material.size);
+			let pointSize = getVal(params.pointSize, this.material.size * 2);
 
 			let nodes = this.nodesOnRay(this.visibleNodes, ray);
 
@@ -61712,7 +61887,7 @@ void main() {
 			visible = visible && level < maxLevel;
 			visible = visible || node.getLevel() <= 2;
 
-			let clipBoxes = pointcloud.material.clipBoxes;
+			let clipBoxes = pointcloud.material.clipBoxes.filter(c => !c.highlight);
 			if(true && clipBoxes.length > 0){
 
 				//node.debug = false;
@@ -63308,13 +63483,14 @@ void main() {
 
 						let flattenedMatrices = [].concat(...worldViewProjMatrices.map(m => m.elements));
 
-						let flattenedVertices = new Array(8 * 3 * material.clipPolygons.length);
+						let stride = 3 * Math.max(8, ...material.clipPolygons.map(p => p.markers.length));
+						let flattenedVertices = new Array(stride * material.clipPolygons.length).fill(0);
 						for(let i = 0; i < material.clipPolygons.length; i++){
 							let clipPolygon = material.clipPolygons[i];
 							for(let j = 0; j < clipPolygon.markers.length; j++){
-								flattenedVertices[i * 24 + (j * 3 + 0)] = clipPolygon.markers[j].position.x;
-								flattenedVertices[i * 24 + (j * 3 + 1)] = clipPolygon.markers[j].position.y;
-								flattenedVertices[i * 24 + (j * 3 + 2)] = clipPolygon.markers[j].position.z;
+								flattenedVertices[i * stride + (j * 3 + 0)] = clipPolygon.markers[j].position.x;
+								flattenedVertices[i * stride + (j * 3 + 1)] = clipPolygon.markers[j].position.y;
+								flattenedVertices[i * stride + (j * 3 + 2)] = clipPolygon.markers[j].position.z;
 							}
 						}
 
@@ -63346,6 +63522,9 @@ void main() {
 				//shader.setUniformMatrix4("modelMatrix", world);
 				//shader.setUniformMatrix4("modelViewMatrix", worldView);
 				shader.setUniform1f("uLevel", level);
+
+				if(node.fadeStart === undefined) node.fadeStart = performance.now();
+				shader.setUniform1f("uFade", Math.min((performance.now() - node.fadeStart) / 200, 1));
 				shader.setUniform1f("uNodeSpacing", node.geometryNode.estimatedSpacing);
 
 				shader.setUniform1f("uPCIndex", i);
@@ -63637,6 +63816,7 @@ void main() {
 						`#define num_clipboxes ${numClipBoxes}`,
 						`#define num_clipspheres ${numClipSpheres}`,
 						`#define num_clippolygons ${numClipPolygons}`,
+						`#define max_clippolygon_vertices ${Math.max(8, ...(material.clipPolygons || []).map(p => p.markers.length))}`,
 						`#define num_cropvertices ${numCropVertices}`,
 					];
 
@@ -63721,7 +63901,7 @@ void main() {
 
 			if (transparent){
 				gl.enable(gl.BLEND);
-				gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+				gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 				gl.depthMask(false);
 				gl.disable(gl.DEPTH_TEST);
 			} else {
@@ -63792,6 +63972,12 @@ void main() {
 
 					const lClipBoxes = shader.uniformLocations["clipBoxes[0]"];
 					gl.uniformMatrix4fv(lClipBoxes, false, material.uniforms.clipBoxes.value);
+
+					const chosen = material.clipBoxes.map((c, i) => c.box.parent === window.viewer.selectedItem ? i : -1).filter(i => i !== -1);
+					shader.setUniform2f("clipSelected", chosen.length ? [chosen[0], chosen[chosen.length - 1]] : [-1, -2]);
+
+					const firstHighlight = material.clipBoxes.findIndex(c => c.highlight);
+					shader.setUniform2f("clipHighlight", [firstHighlight === -1 ? material.clipBoxes.length : firstHighlight, material.highlightProfiles ? 1 : 0]);
 				}
 
 				// TODO CLIPSPHERES
@@ -64544,23 +64730,17 @@ void main() {
 
 	function createCameraAnimationData(animation){
 
-		const controlPoints = animation.controlPoints.map( cp => {
-			const cpdata = {
-				position: cp.position.toArray(),
-				target: cp.target.toArray(),
-			};
-
-			return cpdata;
-		});
-
 		const data = {
 			uuid: animation.uuid,
 			name: animation.name,
 			duration: animation.duration,
 			t: animation.t,
-			curveType: animation.curveType,
 			visible: animation.visible,
-			controlPoints: controlPoints,
+			kind: animation.kind,
+			curveType: animation.curveType,
+			loop: animation.loop,
+			views: animation.views.map(v => ({uuid: v.uuid, enabled: v.enabled, time: v.time})),
+			orbit: animation.orbit ? {center: animation.orbit.center.toArray(), a: animation.orbit.a, b: animation.orbit.b, rotation: animation.orbit.rotation, length: animation.orbit.length, reverse: animation.orbit.reverse, target: animation.orbit.target.toArray()} : null,
 		};
 
 		return data;
@@ -64583,6 +64763,19 @@ void main() {
 			showEdges: measurement.showEdges,
 			color: measurement.color.toArray(),
 		};
+
+		if(measurement.kind){
+			data.kind = measurement.kind;
+		}
+		if(measurement.display === 'latlon'){
+			data.display = measurement.display;
+		}
+		if(measurement.latlon){
+			data.latlon = measurement.latlon;
+		}
+		if(measurement.kind === 'perpendicular' && measurement.normal && measurement.points.length === 2){
+			data.points.push(measurement.points[0].position.clone().add(measurement.normal).toArray());
+		}
 
 		return data;
 	}
@@ -64758,10 +64951,6 @@ void main() {
 			
 			this.viewer = viewer;
 
-			this.selectedElement = null;
-
-			this.controlPoints = [];
-
 			this.uuid = MathUtils.generateUUID();
 
 			this.node = new Object3D();
@@ -64771,263 +64960,235 @@ void main() {
 			this.frustum = this.createFrustum();
 			this.node.add(this.frustum);
 
+			this.line = new Line2(new LineGeometry(), new LineMaterial({ 
+				color: 0xffffff, 
+				linewidth: 2, 
+				resolution:  new Vector2(1000, 1000),
+			}));
+			this.line.visible = false;
+			this.node.add(this.line);
+
 			this.name = "Camera Animation";
-			this.duration = 5;
+			this.duration = 10;
 			this.t = 0;
-			// "centripetal", "chordal", "catmullrom"
-			this.curveType = "centripetal"; 
 			this.visible = true;
+			this.kind = "orbit";
+			this.curveType = "centripetal";
+			this.loop = false;
+			this.views = [];
+			this.orbit = null;
 
-			this.createUpdateHook();
-			this.createPath();
+			this.signature = null;
+			this.positions = [];
+			this.cameraCurve = null;
+			this.targetCurve = null;
+			this.table = [];
+			this.segments = [];
+			this.total = 0;
+			this.dragging = false;
+			this.onPlay = null;
+			this.wasVisible = true;
+
+			this.handles = [
+				this.createHandle("red", ray => {
+					const s = (this.orbit.center.z - ray.origin.z) / ray.direction.z;
+					if(isFinite(s) && s > 0){
+						const dx = ray.origin.x + ray.direction.x * s - this.orbit.center.x;
+						const dy = ray.origin.y + ray.direction.y * s - this.orbit.center.y;
+						this.orbit.a = Math.max(Math.hypot(dx, dy), 0.01);
+						this.orbit.rotation = Math.atan2(dy, dx);
+					}
+				}),
+				this.createHandle("red", ray => {
+					const s = (this.orbit.center.z - ray.origin.z) / ray.direction.z;
+					if(isFinite(s) && s > 0){
+						const dx = ray.origin.x + ray.direction.x * s - this.orbit.center.x;
+						const dy = ray.origin.y + ray.direction.y * s - this.orbit.center.y;
+						this.orbit.b = Math.max(Math.hypot(dx, dy), 0.01);
+						this.orbit.rotation = Math.atan2(dy, dx) - Math.PI / 2;
+					}
+				}),
+				this.createHandle("white", ray => {
+					const normal = this.viewer.scene.getActiveCamera().getWorldDirection(new Vector3());
+					const s = this.orbit.center.clone().sub(ray.origin).dot(normal) / ray.direction.dot(normal);
+					if(isFinite(s) && s > 0) this.orbit.center.copy(ray.origin).addScaledVector(ray.direction, s);
+				}),
+			];
+
+			this.onUpdate = () => this.update();
+			viewer.addEventListener("update", this.onUpdate);
 		}
 
-		static defaultFromView(viewer){
-			const animation = new CameraAnimation(viewer);
+		setKind(kind){
+			this.kind = kind;
 
-			const camera = viewer.scene.getActiveCamera();
-			const target = viewer.scene.view.getPivot();
-
-			const cpCenter = new Vector3(
-				0.3 * camera.position.x + 0.7 * target.x,
-				0.3 * camera.position.y + 0.7 * target.y,
-				0.3 * camera.position.z + 0.7 * target.z,
-			);
-
-			const targetCenter = new Vector3(
-				0.05 * camera.position.x + 0.95 * target.x,
-				0.05 * camera.position.y + 0.95 * target.y,
-				0.05 * camera.position.z + 0.95 * target.z,
-			);
-
-			const r = camera.position.distanceTo(target) * 0.3;
-
-			//const dir = target.clone().sub(camera.position).normalize();
-			const angle = Utils.computeAzimuth(camera.position, target);
-
-			const n = 5;
-			for(let i = 0; i < n; i++){
-				let u = 1.5 * Math.PI * (i / n) + angle;
-
-				const dx = r * Math.cos(u);
-				const dy = r * Math.sin(u);
-
-				const cpPos = [
-					cpCenter.x + dx,
-					cpCenter.y + dy,
-					cpCenter.z,
-				];
-
-				const targetPos = [
-					targetCenter.x + dx * 0.1,
-					targetCenter.y + dy * 0.1,
-					targetCenter.z,
-				];
-
-				const cp = animation.createControlPoint();
-				cp.position.set(...cpPos);
-				cp.target.set(...targetPos);
+			if(kind === "views" && this.views.length === 0){
+				this.views = this.viewer.scene.annotations.descendants().filter(a => a.hasView()).map(a => ({uuid: a.uuid, enabled: true, time: null}));
+			}else if(kind === "orbit" && !this.orbit){
+				const box = this.viewer.getBoundingBox();
+				const target = box.isEmpty() ? this.viewer.scene.view.getPivot() : box.getCenter(new Vector3());
+				const position = this.viewer.scene.view.position;
+				const radius = Math.max(Math.hypot(position.x - target.x, position.y - target.y), 0.01);
+				this.orbit = {center: new Vector3(target.x, target.y, position.z), a: radius, b: radius, rotation: 0, length: 1, reverse: false, target: target};
 			}
-
-			return animation;
 		}
 
-		createUpdateHook(){
+		update(){
 			const viewer = this.viewer;
+			const camera = viewer.scene.getActiveCamera();
+			const {width, height} = viewer.renderer.getSize(new Vector2());
 
-			viewer.addEventListener("update", () => {
+			this.node.visible = this.visible && !viewer.recording;
 
-				const camera = viewer.scene.getActiveCamera();
-				const {width, height} = viewer.renderer.getSize(new Vector2());
+			const positions = [], targets = [], times = [];
+			let closed = true;
 
-				this.node.visible = this.visible;
+			if(this.kind === "views"){
+				const povs = viewer.scene.annotations.descendants().filter(a => a.hasView());
+				this.views = this.views.filter(v => povs.some(a => a.uuid === v.uuid));
+				for(const a of povs){
+					if(!this.views.some(v => v.uuid === a.uuid)) this.views.push({uuid: a.uuid, enabled: false, time: null});
+				}
+				for(const v of this.views){
+					if(!v.enabled) continue;
+					const a = povs.find(a => a.uuid === v.uuid);
+					positions.push(a.cameraPosition.clone());
+					targets.push(a.cameraTarget.clone());
+					times.push(v.time);
+				}
+				closed = this.loop;
+			}else if(this.kind === "orbit" && this.orbit){
+				closed = this.orbit.length >= 1;
+				for(let i = 0; i < (closed ? 32 : 33); i++){
+					const angle = (this.orbit.reverse ? -1 : 1) * 2 * Math.PI * this.orbit.length * i / 32;
+					const x = this.orbit.a * Math.cos(angle), y = this.orbit.b * Math.sin(angle);
+					positions.push(new Vector3(
+						this.orbit.center.x + x * Math.cos(this.orbit.rotation) - y * Math.sin(this.orbit.rotation),
+						this.orbit.center.y + x * Math.sin(this.orbit.rotation) + y * Math.cos(this.orbit.rotation),
+						this.orbit.center.z));
+					targets.push(this.orbit.target.clone());
+					times.push(null);
+				}
+			}
 
-				for(const cp of this.controlPoints){
-					
-					{ // position
-						const projected = cp.position.clone().project(camera);
+			const signature = JSON.stringify([closed, this.curveType, this.duration, times, positions.map(p => p.toArray()), targets.map(p => p.toArray())]);
+			if(signature !== this.signature){
+				this.signature = signature;
+				this.positions = positions;
+				this.cameraCurve = null;
+				this.targetCurve = null;
+				this.table = [];
+				this.segments = [];
+				this.total = 0;
 
-						const visible = this.visible && (projected.z < 1 && projected.z > -1);
+				if(positions.length >= 2){
+					this.cameraCurve = new CatmullRomCurve3(positions, closed, this.curveType);
+					this.targetCurve = new CatmullRomCurve3(targets, closed, this.curveType);
 
-						if(visible){
-							const x = width * (projected.x * 0.5 + 0.5);
-							const y = height - height * (projected.y * 0.5 + 0.5);
+					const count = closed ? positions.length : positions.length - 1;
+					const first = positions[0];
+					const linePositions = [0, 0, 0];
+					const steps = [];
+					let prev = first;
+					let all = 0;
 
-							cp.positionHandle.svg.style.left = x - cp.positionHandle.svg.clientWidth / 2;
-							cp.positionHandle.svg.style.top = y - cp.positionHandle.svg.clientHeight / 2;
-							cp.positionHandle.svg.style.display = "";
-						}else {
-							cp.positionHandle.svg.style.display = "none";
+					for(let i = 0; i < count; i++){
+						let length = 0;
+						for(let k = 1; k <= 20; k++){
+							const p = this.cameraCurve.getPoint((i + k / 20) / count);
+							steps.push(p.distanceTo(prev));
+							length += steps[steps.length - 1];
+							linePositions.push(p.x - first.x, p.y - first.y, p.z - first.z);
+							prev = p;
+						}
+						this.segments.push({length: length, time: times[i]});
+						all += length;
+					}
+
+					this.table.push({u: 0, d: 0});
+					for(let i = 0; i < count; i++){
+						const segment = this.segments[i];
+						if(segment.time == null) segment.time = all > 0 ? segment.length * this.duration / all : 0;
+						for(let k = 1; k <= 20; k++){
+							this.total += segment.length > 0 ? steps[i * 20 + k - 1] / segment.length * segment.time : segment.time / 20;
+							this.table.push({u: (i + k / 20) / count, d: this.total});
 						}
 					}
 
-					{ // target
-						const projected = cp.target.clone().project(camera);
+					this.line.geometry.dispose();
+					this.line.geometry = new LineGeometry();
+					this.line.geometry.setPositions(linePositions);
+					this.line.geometry.computeBoundingSphere();
+					this.line.position.copy(first);
+					this.line.computeLineDistances();
+				}
 
-						const visible = this.visible && (projected.z < 1 && projected.z > -1);
+				this.line.visible = !!this.cameraCurve;
+			}
 
-						if(visible){
-							const x = width * (projected.x * 0.5 + 0.5);
-							const y = height - height * (projected.y * 0.5 + 0.5);
+			this.line.material.resolution.set(width, height);
+			this.line.material.color.set(viewer.selectedItem === this ? 0xffff00 : 0xffffff);
 
-							cp.targetHandle.svg.style.left = x - cp.targetHandle.svg.clientWidth / 2;
-							cp.targetHandle.svg.style.top = y - cp.targetHandle.svg.clientHeight / 2;
-							cp.targetHandle.svg.style.display = "";
-						}else {
-							cp.targetHandle.svg.style.display = "none";
-						}
+			const frame = this.at(this.t);
+			this.frustum.visible = !!frame;
+			if(frame){
+				this.frustum.position.copy(frame.position);
+				this.frustum.lookAt(...frame.target.toArray());
+				const perPixel = camera.isPerspectiveCamera
+					? 2 * camera.position.distanceTo(frame.position) * Math.tan(MathUtils.degToRad(camera.fov) / 2) / height
+					: (camera.top - camera.bottom) / camera.zoom / height;
+				this.frustum.scale.setScalar(perPixel * 32);
+				this.frustum.material.resolution.set(width, height);
+			}
+
+			const shown = this.visible && this.kind === "orbit" && this.orbit && !this.onPlay;
+			this.handles.forEach((svg, i) => {
+				let visible = false;
+				if(shown){
+					const x = i === 0 ? this.orbit.a : 0, y = i === 1 ? this.orbit.b : 0;
+					const projected = new Vector3(
+						this.orbit.center.x + x * Math.cos(this.orbit.rotation) - y * Math.sin(this.orbit.rotation),
+						this.orbit.center.y + x * Math.sin(this.orbit.rotation) + y * Math.cos(this.orbit.rotation),
+						this.orbit.center.z).project(camera);
+					visible = projected.z < 1 && projected.z > -1;
+					if(visible){
+						svg.style.left = (width * (projected.x * 0.5 + 0.5) - svg.clientWidth / 2) + "px";
+						svg.style.top = (height - height * (projected.y * 0.5 + 0.5) - svg.clientHeight / 2) + "px";
 					}
-
 				}
-
-				this.line.material.resolution.set(width, height);
-
-				this.updatePath();
-
-				{ // frustum
-					const frame = this.at(this.t);
-					const frustum = this.frustum;
-
-					frustum.position.copy(frame.position);
-					frustum.lookAt(...frame.target.toArray());
-					frustum.scale.set(20, 20, 20);
-
-					frustum.material.resolution.set(width, height);
-				}
-
+				svg.style.display = visible ? "" : "none";
 			});
-		}
-
-		createControlPoint(index){
-
-			if(index === undefined){
-				index = this.controlPoints.length;
-			}
-
-			const cp = new ControlPoint();
-
-
-			if(this.controlPoints.length >= 2 && index === 0){
-				const cp1 = this.controlPoints[0];
-				const cp2 = this.controlPoints[1];
-
-				const dir = cp1.position.clone().sub(cp2.position).multiplyScalar(0.5);
-				cp.position.copy(cp1.position).add(dir);
-
-				const tDir = cp1.target.clone().sub(cp2.target).multiplyScalar(0.5);
-				cp.target.copy(cp1.target).add(tDir);
-			}else if(this.controlPoints.length >= 2 && index === this.controlPoints.length){
-				const cp1 = this.controlPoints[this.controlPoints.length - 2];
-				const cp2 = this.controlPoints[this.controlPoints.length - 1];
-
-				const dir = cp2.position.clone().sub(cp1.position).multiplyScalar(0.5);
-				cp.position.copy(cp1.position).add(dir);
-
-				const tDir = cp2.target.clone().sub(cp1.target).multiplyScalar(0.5);
-				cp.target.copy(cp2.target).add(tDir);
-			}else if(this.controlPoints.length >= 2){
-				const cp1 = this.controlPoints[index - 1];
-				const cp2 = this.controlPoints[index];
-
-				cp.position.copy(cp1.position.clone().add(cp2.position).multiplyScalar(0.5));
-				cp.target.copy(cp1.target.clone().add(cp2.target).multiplyScalar(0.5));
-			}
-
-			// cp.position.copy(viewer.scene.view.position);
-			// cp.target.copy(viewer.scene.view.getPivot());
-
-			cp.positionHandle = this.createHandle(cp.position);
-			cp.targetHandle = this.createHandle(cp.target);
-
-			this.controlPoints.splice(index, 0, cp);
-
-			this.dispatchEvent({
-				type: "controlpoint_added",
-				controlpoint: cp,
-			});
-
-			return cp;
-		}
-
-		removeControlPoint(cp){
-			this.controlPoints = this.controlPoints.filter(_cp => _cp !== cp);
-
-			this.dispatchEvent({
-				type: "controlpoint_removed",
-				controlpoint: cp,
-			});
-
-			cp.positionHandle.svg.remove();
-			cp.targetHandle.svg.remove();
-
-			// TODO destroy cp
-		}
-
-		createPath(){
-
-			{ // position
-				const geometry = new LineGeometry();
-
-				let material = new LineMaterial({ 
-					color: 0x00ff00, 
-					dashSize: 5, 
-					gapSize: 2,
-					linewidth: 2, 
-					resolution:  new Vector2(1000, 1000),
-				});
-
-				const line = new Line2(geometry, material);
-
-				this.line = line;
-				this.node.add(line);
-			}
-
-			{ // target
-				const geometry = new LineGeometry();
-
-				let material = new LineMaterial({ 
-					color: 0x0000ff, 
-					dashSize: 5, 
-					gapSize: 2,
-					linewidth: 2, 
-					resolution:  new Vector2(1000, 1000),
-				});
-
-				const line = new Line2(geometry, material);
-
-				this.targetLine = line;
-				this.node.add(line);
-			}
 		}
 
 		createFrustum(){
 
-			const f = 0.3;
+			const w = 0.6;
+			const h = 0.4;
 
 			const positions = [
 				 0,  0,  0,
-				-f, -f, +1,
+				-w, -h, +1,
 
 				 0,  0,  0,
-				 f, -f, +1,
+				 w, -h, +1,
 
 				 0,  0,  0,
-				 f,  f, +1,
+				 w,  h, +1,
 
 				 0,  0,  0,
-				-f,  f, +1,
+				-w,  h, +1,
 
-				-f, -f, +1,
-				 f, -f, +1,
+				-w, -h, +1,
+				 w, -h, +1,
 
-				 f, -f, +1,
-				 f,  f, +1,
+				 w, -h, +1,
+				 w,  h, +1,
 
-				 f,  f, +1,
-				-f,  f, +1,
+				 w,  h, +1,
+				-w,  h, +1,
 
-				-f,  f, +1,
-				-f, -f, +1,
+				-w,  h, +1,
+				-w, -h, +1,
 			];
 
 			const geometry = new LineGeometry();
@@ -65037,179 +65198,82 @@ void main() {
 			geometry.computeBoundingSphere();
 
 			let material = new LineMaterial({ 
-				color: 0xff0000, 
+				color: 0xffffff, 
 				linewidth: 2, 
 				resolution:  new Vector2(1000, 1000),
 			});
 
 			const line = new Line2(geometry, material);
 			line.computeLineDistances();
+			line.up.set(0, 0, 1);
 			
 			return line;
 		}
 
-		updatePath(){
-
-			{ // positions
-				const positions = this.controlPoints.map(cp => cp.position);
-				const first = positions[0];
-
-				const curve = new CatmullRomCurve3(positions);
-				curve.curveType = this.curveType;
-
-				const n = 100;
-
-				const curvePositions = [];
-				for(let k = 0; k <= n; k++){
-					const t = k / n;
-
-					const position = curve.getPoint(t).sub(first);
-
-					curvePositions.push(position.x, position.y, position.z);
-				}
-
-				this.line.geometry.setPositions(curvePositions);
-				this.line.geometry.verticesNeedUpdate = true;
-				this.line.geometry.computeBoundingSphere();
-				this.line.position.copy(first);
-				this.line.computeLineDistances();
-
-				this.cameraCurve = curve;
-			}
-
-			{ // targets
-				const positions = this.controlPoints.map(cp => cp.target);
-				const first = positions[0];
-
-				const curve = new CatmullRomCurve3(positions);
-				curve.curveType = this.curveType;
-
-				const n = 100;
-
-				const curvePositions = [];
-				for(let k = 0; k <= n; k++){
-					const t = k / n;
-
-					const position = curve.getPoint(t).sub(first);
-
-					curvePositions.push(position.x, position.y, position.z);
-				}
-
-				this.targetLine.geometry.setPositions(curvePositions);
-				this.targetLine.geometry.verticesNeedUpdate = true;
-				this.targetLine.geometry.computeBoundingSphere();
-				this.targetLine.position.copy(first);
-				this.targetLine.computeLineDistances();
-
-				this.targetCurve = curve;
-			}
-		}
-
 		at(t){
-			
-			if(t > 1){
-				t = 1;
-			}else if(t < 0){
-				t = 0;
-			}
+			if(!this.cameraCurve) return null;
 
-			const camPos = this.cameraCurve.getPointAt(t);
-			const target = this.targetCurve.getPointAt(t);
+			const d = Math.min(Math.max(t, 0), 1) * this.total;
+			let i = 1;
+			while(i < this.table.length - 1 && this.table[i].d < d) i++;
+			const a = this.table[i - 1], b = this.table[i];
+			const u = b.d > a.d ? a.u + (b.u - a.u) * (d - a.d) / (b.d - a.d) : a.u;
 
-			const frame = {
-				position: camPos,
-				target: target,
+			return {
+				position: this.cameraCurve.getPoint(u),
+				target: this.targetCurve.getPoint(u),
 			};
-
-			return frame;
 		}
 
 		set(t){
 			this.t = t;
 		}
 
-		createHandle(vector){
-			
+		createHandle(color, onDrag){
 			const svgns = "http://www.w3.org/2000/svg";
 			const svg = document.createElementNS(svgns, "svg");
 
 			svg.setAttribute("width", "2em");
 			svg.setAttribute("height", "2em");
-			svg.setAttribute("position", "absolute");
 
-			svg.style.left = "50px";
-			svg.style.top = "50px";
 			svg.style.position = "absolute";
-			svg.style.zIndex = "10000";
+			svg.style.display = "none";
+			svg.style.cursor = "pointer";
 
 			const circle = document.createElementNS(svgns, 'circle');
 			circle.setAttributeNS(null, 'cx', "1em");
 			circle.setAttributeNS(null, 'cy', "1em");
 			circle.setAttributeNS(null, 'r', "0.5em");
-			circle.setAttributeNS(null, 'style', 'fill: red; stroke: black; stroke-width: 0.2em;' );
+			circle.setAttributeNS(null, 'style', `fill: ${color}; stroke: black; stroke-width: 0.2em;`);
 			svg.appendChild(circle);
 
-
-			const element = this.viewer.renderer.domElement.parentElement;
-			element.appendChild(svg);
-
-
-			const startDrag = (evt) => {
-				this.selectedElement = svg;
-
-				document.addEventListener("mousemove", drag);
-			};
-
-			const endDrag = (evt) => {
-				this.selectedElement = null;
-
-				document.removeEventListener("mousemove", drag);
-			};
+			const domElement = this.viewer.renderer.domElement;
+			domElement.parentElement.appendChild(svg);
 
 			const drag = (evt) => {
-				if (this.selectedElement) {
-					evt.preventDefault();
-
-					const rect = viewer.renderer.domElement.getBoundingClientRect();
-
-					const x = evt.clientX - rect.x;
-					const y = evt.clientY - rect.y;
-
-					const {width, height} = this.viewer.renderer.getSize(new Vector2());
-					const camera = this.viewer.scene.getActiveCamera();
-					//const cp = this.controlPoints.find(cp => cp.handle.svg === svg);
-					const projected = vector.clone().project(camera);
-
-					projected.x = ((x / width) - 0.5) / 0.5;
-					projected.y = (-(y - height) / height - 0.5) / 0.5;
-
-					const unprojected = projected.clone().unproject(camera);
-					vector.set(unprojected.x, unprojected.y, unprojected.z);
-
-
-				}
+				evt.preventDefault();
+				const rect = domElement.getBoundingClientRect();
+				onDrag(Utils.mouseToRay({x: evt.clientX - rect.x, y: evt.clientY - rect.y}, this.viewer.scene.getActiveCamera(), rect.width, rect.height));
 			};
 
-			svg.addEventListener('mousedown', startDrag);
-			svg.addEventListener('mouseup', endDrag);
-
-			const handle = {
-				svg: svg,
+			const endDrag = () => {
+				this.dragging = false;
+				document.removeEventListener("mousemove", drag);
+				document.removeEventListener("mouseup", endDrag);
 			};
 
-			return handle;
+			svg.addEventListener('mousedown', (evt) => {
+				evt.preventDefault();
+				this.dragging = true;
+				document.addEventListener("mousemove", drag);
+				document.addEventListener("mouseup", endDrag);
+			});
+
+			return svg;
 		}
 
 		setVisible(visible){
 			this.node.visible = visible;
-
-			const display = visible ? "" : "none";
-
-			for(const cp of this.controlPoints){
-				cp.positionHandle.svg.style.display = display;
-				cp.targetHandle.svg.style.display = display;
-			}
-
 			this.visible = visible;
 		}
 
@@ -65221,38 +65285,46 @@ void main() {
 			return this.duration;
 		}
 
-		play(){
+		play(once){
+			this.stop();
 
-			const tStart = performance.now();
-			const duration = this.duration;
-
-			const originalyVisible = this.visible;
+			if(this.t >= 1) this.t = 0;
+			const tStart = performance.now() - this.t * this.duration * 1000;
+			this.wasVisible = this.visible;
 			this.setVisible(false);
 
-			const onUpdate = (delta) => {
+			this.onPlay = () => {
+				const repeat = this.loop && !once;
+				let t = (performance.now() - tStart) / 1000 / this.duration;
+				if(repeat) t = t % 1;
 
-				let tNow = performance.now();
-				let elapsed = (tNow - tStart) / 1000;
-				let t = elapsed / duration;
+				this.t = Math.min(t, 1);
+				const frame = this.at(this.t);
 
-				this.set(t);
-
-				const frame = this.at(t);
-
-				viewer.scene.view.position.copy(frame.position);
-				viewer.scene.view.lookAt(frame.target);
-
-
-				if(t > 1){
-					this.setVisible(originalyVisible);
-
-					this.viewer.removeEventListener("update", onUpdate);
+				if(frame){
+					this.viewer.scene.view.position.copy(frame.position);
+					this.viewer.scene.view.lookAt(frame.target);
 				}
 
+				if(!frame || (t > 1 && !repeat)) this.stop();
 			};
 
-			this.viewer.addEventListener("update", onUpdate);
+			this.viewer.addEventListener("update", this.onPlay);
+		}
 
+		stop(){
+			if(!this.onPlay) return;
+
+			this.viewer.removeEventListener("update", this.onPlay);
+			this.onPlay = null;
+			this.setVisible(this.wasVisible);
+		}
+
+		dispose(){
+			this.stop();
+			this.viewer.removeEventListener("update", this.onUpdate);
+			if(this.node.parent) this.node.parent.remove(this.node);
+			this.handles.forEach(svg => svg.remove());
 		}
 
 	}
@@ -65353,9 +65425,25 @@ void main() {
 		measure.showCircle = data.showCircle;
 		measure.showAzimuth = data.showAzimuth;
 		measure.showEdges = data.showEdges;
+		if(data.kind){
+			measure.kind = data.kind;
+		}
+		if(data.display){
+			measure.display = data.display;
+		}
+		if(data.latlon){
+			measure.latlon = data.latlon;
+		}
 		// color
 
-		for(const point of data.points){
+		let points = data.points;
+		if(data.kind === 'perpendicular' && points.length === 3){
+			measure.normalAt = new Vector3(...points[0]);
+			measure.normal = new Vector3(...points[2]).sub(measure.normalAt).normalize();
+			points = points.slice(0, 2);
+		}
+
+		for(const point of points){
 			const pos = new Vector3(...point);
 			measure.addMarker(pos);
 		}
@@ -65387,7 +65475,7 @@ void main() {
 	function loadCameraAnimation(viewer, data){
 
 		const duplicate = viewer.scene.cameraAnimations.find(a => a.uuid === data.uuid);
-		if(duplicate){
+		if(duplicate || (data.kind !== "views" && data.kind !== "orbit")){
 			return;
 		}
 
@@ -65397,16 +65485,13 @@ void main() {
 		animation.name = data.name;
 		animation.duration = data.duration;
 		animation.t = data.t;
-		animation.curveType = data.curveType;
 		animation.visible = data.visible;
-		animation.controlPoints = [];
-
-		for(const cpdata of data.controlPoints){
-			const cp = animation.createControlPoint();
-
-			cp.position.set(...cpdata.position);
-			cp.target.set(...cpdata.target);
-		}
+		animation.kind = data.kind;
+		animation.curveType = data.curveType === "chordal" ? "chordal" : "centripetal";
+		animation.loop = data.loop;
+		animation.views = data.views.map(v => ({uuid: v.uuid, enabled: v.enabled, time: v.time == null ? null : v.time}));
+		animation.orbit = data.orbit ? {center: new Vector3(...data.orbit.center), a: data.orbit.a, b: data.orbit.b, rotation: data.orbit.rotation || 0, length: data.orbit.length || 1, reverse: !!data.orbit.reverse, target: new Vector3(...(data.orbit.target || data.orbit.center))} : null;
+		if(data.orbit && !data.orbit.target) animation.orbit.center.z += data.orbit.height;
 
 		viewer.scene.addCameraAnimation(animation);
 	}
@@ -67918,7 +68003,6 @@ void main() {
 
 			this.viewer = viewer;
 
-			this.maxPolygonVertices = 8; 
 			
 			this.addEventListener("start_inserting_clipping_volume", e => {
 				this.viewer.dispatchEvent({
@@ -68016,21 +68100,25 @@ void main() {
 
 			let insertionCallback = (e) => {
 				if(e.button === MOUSE.LEFT){
-					
+					let first = svg.find("polyline")[0].points;
+					if(polyClipVol.markers.length > 3 && (e.detail > 1 || Math.hypot(e.offsetX - first.getItem(0).x, e.offsetY - first.getItem(0).y) < 12)){
+						cancel.callback(e);
+						return;
+					}
+					if(e.detail > 1) return;
+
+					let placed = polyClipVol.markers.length - 1;
 					polyClipVol.addMarker();
 
 					// SVC Screen Line
 					svg.find("polyline").each((index, target) => {
+						while(target.points.numberOfItems > placed) target.points.removeItem(target.points.numberOfItems - 1);
 						let newPoint = svg[0].createSVGPoint();
 						newPoint.x = e.offsetX;
 						newPoint.y = e.offsetY;
 						let polyline = target.points.appendItem(newPoint);
 					});
 					
-					
-					if(polyClipVol.markers.length > this.maxPolygonVertices){
-						cancel.callback();
-					}
 					
 					this.viewer.inputHandler.startDragging(
 						polyClipVol.markers[polyClipVol.markers.length - 1]);
@@ -68059,8 +68147,37 @@ void main() {
 
 				this.viewer.renderer.domElement.removeEventListener("mouseup", insertionCallback, false);
 				this.viewer.removeEventListener("cancel_insertions", cancel.callback);
+				document.removeEventListener("keydown", enter);
+				this.viewer.renderer.domElement.removeEventListener("mousemove", hover, false);
+				setTimeout(() => this.viewer.renderer.domElement.removeEventListener("dblclick", noZoom, true), 300);
+				this.closing = false;
 				this.viewer.inputHandler.enabled = true;
 			};
+
+			let enter = e => {
+				if(e.key === "Enter" && polyClipVol.markers.length > 3){
+					this.viewer.renderer.domElement.dispatchEvent(new MouseEvent("mouseup", {button: 2, bubbles: true}));
+				}
+			};
+			document.addEventListener("keydown", enter);
+
+			let hover = e => {
+				let first = svg.find("polyline")[0].points;
+				this.closing = polyClipVol.markers.length > 3 && Math.hypot(e.offsetX - first.getItem(0).x, e.offsetY - first.getItem(0).y) < 12;
+				let x = this.closing ? first.getItem(0).x : e.offsetX;
+				let y = this.closing ? first.getItem(0).y : e.offsetY;
+				svg.find("polyline").each((index, target) => {
+					let p = svg[0].createSVGPoint();
+					p.x = x;
+					p.y = y;
+					if(target.points.numberOfItems > polyClipVol.markers.length - 1) target.points.replaceItem(p, target.points.numberOfItems - 1);
+					else target.points.appendItem(p);
+				});
+			};
+			this.viewer.renderer.domElement.addEventListener("mousemove", hover, false);
+
+			let noZoom = e => e.stopImmediatePropagation();
+			this.viewer.renderer.domElement.addEventListener("dblclick", noZoom, true);
 			
 			this.viewer.addEventListener("cancel_insertions", cancel.callback);
 			this.viewer.renderer.domElement.addEventListener("mouseup", insertionCallback , false);
@@ -69361,7 +69478,7 @@ void main() {
 					this.viewer.inputHandler.blacklist.delete(selected);
 				}
 
-				this.selection = e.selection;
+				this.selection = e.selection.filter(selected => !selected.locked);
 
 				for(let selected of this.selection){
 					this.viewer.inputHandler.blacklist.add(selected);
@@ -71100,6 +71217,7 @@ void main() {
 					attributeMaterial.clipTask = material.clipTask;
 					attributeMaterial.clipMethod = material.clipMethod;
 					attributeMaterial.setClipBoxes(material.clipBoxes);
+					attributeMaterial.highlightProfiles = true;
 					attributeMaterial.setClipPolygons(material.clipPolygons);
 					attributeMaterial.cropVertices = material.cropVertices;
 
@@ -71613,6 +71731,7 @@ void main() {
 			let index = this.cameraAnimations.indexOf(animation);
 			if (index > -1) {
 				this.cameraAnimations.splice(index, 1);
+				animation.dispose();
 
 				this.dispatchEvent({
 					'type': 'camera_animation_removed',
@@ -73086,8 +73205,6 @@ void main() {
 			this.initListeners();
 
 			this.pRenderer = new Renderer(this.renderer);
-
-			this.elRoot.i18n();
 		}
 
 		initListeners () {
@@ -73169,61 +73286,11 @@ void main() {
 						}
 						
 
-						let info = this.elRoot.find('#profileSelectionProperties');
-						let html = '<table>';
-
-						for (let attributeName of Object.keys(point)) {
-
-							let value = point[attributeName];
-							let attribute = closest.pointcloud.getAttribute(attributeName);
-
-							let transform = value => value;
-							if(attribute && attribute.type.size > 4){
-								let range = attribute.initialRange;
-								let scale = 1 / (range[1] - range[0]);
-								let offset = range[0];
-								transform = value => value / scale + offset;
-							}
-
-							if (attributeName === 'position') {
-								let values = [...position];
-								html += `
-								<tr>
-									<td>x</td>
-									<td>${Utils.addCommas(values[0].toFixed(3))}</td>
-								</tr>
-								<tr>
-									<td>y</td>
-									<td>${Utils.addCommas(values[1].toFixed(3))}</td>
-								</tr>
-								<tr>
-									<td>z</td>
-									<td>${Utils.addCommas((values[2] / this.viewer.lengthUnit.unitspermeter * this.viewer.lengthUnitDisplay.unitspermeter).toFixed(3))}</td>
-								</tr>`;
-							} else if (attributeName === 'rgba') {
-								html += `
-								<tr>
-									<td>${attributeName}</td>
-									<td>${value.join(', ')}</td>
-								</tr>`;
-							} else if (attributeName === 'normal') {
-								continue;
-							} else if (attributeName === 'mileage') {
-								html += `
-								<tr>
-									<td>${attributeName}</td>
-									<td>${(value / this.viewer.lengthUnit.unitspermeter * this.viewer.lengthUnitDisplay.unitspermeter).toFixed(3)}</td>
-								</tr>`;
-							} else if (attributeName === "classification") {
-								html += `
-								<tr>
-									<td style="padding-right: 4px">${attributeName}</td>
-									<td>${transform(value)}</td>
-								</tr>`;
-							}
-						}
-						html += '</table>';
-						info.html(html);
+						this.elRoot.find('#profileSelectionProperties').text([
+							Utils.addCommas(position[0].toFixed(3)),
+							Utils.addCommas(position[1].toFixed(3)),
+							Utils.addCommas((position[2] / this.viewer.lengthUnit.unitspermeter * this.viewer.lengthUnitDisplay.unitspermeter).toFixed(3))
+						].join(' / '));
 
 						this.selectedPoint = point;
 					} else {
@@ -73610,7 +73677,7 @@ void main() {
 		}
 
 		hide () {
-			this.elRoot.fadeOut();
+			this.elRoot.hide();
 			this.enabled = false;
 		}
 
@@ -73740,20 +73807,6 @@ void main() {
 				e.scene.addEventListener("pointcloud_added", this._recompute);
 			});
 			this.viewer.scene.addEventListener("pointcloud_added", this._recompute);
-
-			$("#potree_profile_rotate_amount").val(parseInt(this.rotateAmount));
-			$("#potree_profile_rotate_amount").on("input", (e) => {
-				const str = $("#potree_profile_rotate_amount").val();
-
-				if(!isNaN(str)){
-					const value = parseFloat(str);
-					this.rotateAmount = value;
-					$("#potree_profile_rotate_amount").css("background-color", "");
-				}else {
-					$("#potree_profile_rotate_amount").css("background-color", "#ff9999");
-				}
-
-			});
 
 			const rotate = (radians) => {
 				const profile = this.profile;
@@ -73978,36 +74031,12 @@ void main() {
 				features.push(object);
 			}
 
-			if (measurement.showDistances) {
-				measurement.edgeLabels.forEach((label) => {
-					let labelPoint = {
-						type: 'Feature',
-						geometry: {
-							type: 'Point',
-							coordinates: label.position.toArray()
-						},
-						properties: {
-							distance: label.text
-						}
-					};
-					features.push(labelPoint);
-				});
-			}
-
-			if (measurement.showArea) {
-				let point = measurement.areaLabel.position;
-				let labelArea = {
-					type: 'Feature',
-					geometry: {
-						type: 'Point',
-						coordinates: point.toArray()
-					},
-					properties: {
-						area: measurement.areaLabel.text
-					}
-				};
-				features.push(labelArea);
-			}
+			let conv = measurement.lengthUnit != null && measurement.lengthUnitDisplay != null ? measurement.lengthUnitDisplay.unitspermeter / measurement.lengthUnit.unitspermeter : 1;
+			features.forEach(f => {
+				if (measurement.showDistances && coords.length > 1) f.properties.distance = measurement.getTotalDistance() * conv;
+				if (measurement.showArea && coords.length > 2) f.properties.area = measurement.getArea() * conv * conv;
+				if (measurement.showHeight && coords.length > 1) f.properties.height = (Math.max(...coords.map(c => c[2])) - Math.min(...coords.map(c => c[2]))) * conv;
+			});
 
 			return features;
 		}
@@ -80855,15 +80884,19 @@ ENDSEC
 		startInsertion (args = {}) {
 			let domElement = this.viewer.renderer.domElement;
 
-			let annotation = new Annotation({
+			let annotation = args.annotation || new Annotation({
 				position: [589748.270, 231444.540, 753.675],
-				title: "Annotation Title",
-				description: `Annotation Description`
+				title: '',
+				description: ''
 			});
-			this.dispatchEvent({type: 'start_inserting_annotation', annotation: annotation});
+			const start = annotation.position.clone();
+			annotation.domElement.css('pointer-events', 'none');
 
 			const annotations = this.viewer.scene.annotations;
-			annotations.add(annotation);
+			if (!args.annotation) {
+				this.dispatchEvent({type: 'start_inserting_annotation', annotation: annotation});
+				annotations.add(annotation);
+			}
 
 			let callbacks = {
 				cancel: null,
@@ -80879,13 +80912,20 @@ ENDSEC
 			};
 
 			callbacks.cancel = e => {
-				annotations.remove(annotation);
+				if (args.annotation) {
+					annotation.position.copy(start);
+				} else {
+					annotations.remove(annotation);
+				}
 
+				annotation.domElement.css('pointer-events', '');
 				domElement.removeEventListener('mouseup', insertionCallback, true);
 			};
 
 			callbacks.finish = e => {
+				annotation.domElement.css('pointer-events', '');
 				domElement.removeEventListener('mouseup', insertionCallback, true);
+				if (!args.annotation) annotation.edit(annotation.elTitle);
 			};
 
 			domElement.addEventListener('mouseup', insertionCallback, true);
@@ -80918,6 +80958,80 @@ ENDSEC
 			this.viewer.inputHandler.startDragging(this.s);
 
 			return annotation;
+		}
+
+		startLookAt (annotation) {
+			let domElement = this.viewer.renderer.domElement;
+			const start = annotation.cameraTarget.clone();
+
+			const geometry = new LineGeometry();
+			geometry.setPositions([0, 0, 0, 0, 0, 1]);
+			const line = new Line2(geometry, new LineMaterial({
+				color: 0xffffff,
+				linewidth: 2,
+				resolution: this.viewer.renderer.getSize(new Vector2()),
+				dashSize: 0.01,
+				gapSize: 0.01,
+				transparent: true,
+				opacity: 0.5
+			}));
+			line.material.defines.USE_DASH = "";
+			line.computeLineDistances();
+			line.visible = false;
+			annotation.marker.parent.add(line);
+
+			let insertionCallback = (e) => {
+				if (e.button === MOUSE.RIGHT) {
+					annotation.cameraTarget.copy(start);
+				} else if (e.button === MOUSE.LEFT) {
+					annotation.position.copy(annotation.cameraTarget);
+					if (this.viewer.scene.view.position.distanceTo(annotation.cameraPosition) < 0.01) {
+						this.viewer.scene.view.lookAt(annotation.cameraTarget);
+					}
+				}
+				domElement.removeEventListener('mouseup', insertionCallback, true);
+			};
+			domElement.addEventListener('mouseup', insertionCallback, true);
+
+			let escape = (e) => {
+				if (e.key === 'Escape') domElement.dispatchEvent(new MouseEvent('mouseup', {button: 2, bubbles: true}));
+			};
+			document.addEventListener('keydown', escape);
+
+			let drag = (e) => {
+				let I = Utils.getMousePointCloudIntersection(
+					e.drag.end, 
+					e.viewer.scene.getActiveCamera(), 
+					e.viewer, 
+					e.viewer.scene.pointclouds,
+					{pickClipped: true});
+
+				if (I) {
+					this.s.position.copy(I.location);
+					annotation.cameraTarget.copy(I.location);
+
+					line.position.copy(annotation.cameraPosition);
+					line.lookAt(I.location);
+					line.scale.set(1, 1, annotation.cameraPosition.distanceTo(I.location));
+					line.visible = true;
+				}
+			};
+
+			let drop = (e) => {
+				this.viewer.scene.scene.remove(this.s);
+				this.s.magnify = false;
+				line.parent.remove(line);
+				document.removeEventListener('keydown', escape);
+				this.s.removeEventListener("drag", drag);
+				this.s.removeEventListener("drop", drop);
+			};
+
+			this.s.addEventListener('drag', drag);
+			this.s.addEventListener('drop', drop);
+
+			this.s.magnify = true;
+			this.viewer.scene.scene.add(this.s);
+			this.viewer.inputHandler.startDragging(this.s);
 		}
 		
 		update(){
@@ -80974,6 +81088,40 @@ ENDSEC
 			if (this.domElement.tabIndex === -1) {
 				this.domElement.tabIndex = 2222;
 			}
+
+			this.paused = null;
+			this.spaceDown = false;
+
+			this.domElement.addEventListener('mouseup', e => {
+				if (!this.paused) return;
+				e.stopImmediatePropagation();
+				this.onMouseUp(e);
+				if (!this.spaceDown) {
+					this.startDragging(this.paused);
+					this.paused = null;
+				}
+			}, true);
+			window.addEventListener('keydown', e => {
+				if (e.keyCode !== 32 || e.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].indexOf(e.target.tagName) !== -1) return;
+				this.spaceDown = true;
+				if (!this.paused && this.drag && this.drag.object && !this.drag.mouse) {
+					this.paused = this.drag.object;
+					this.drag = null;
+					this.domElement.focus({preventScroll: true});
+				}
+				if (this.paused) e.preventDefault();
+			});
+			window.addEventListener('keyup', e => {
+				if (e.keyCode !== 32) return;
+				this.spaceDown = false;
+				if (this.paused) {
+					e.preventDefault();
+					if (!this.drag) {
+						this.startDragging(this.paused);
+						this.paused = null;
+					}
+				}
+			});
 
 			this.domElement.addEventListener('contextmenu', (event) => { event.preventDefault(); }, false);
 			this.domElement.addEventListener('click', this.onMouseClick.bind(this), false);
@@ -81185,6 +81333,7 @@ ENDSEC
 			if (this.logMessages) console.log(this.constructor.name + ': onMouseDown');
 
 			e.preventDefault();
+			this.domElement.focus({preventScroll: true});
 
 			let consumed = false;
 			let consume = () => { return consumed = true; };
@@ -81212,7 +81361,7 @@ ENDSEC
 			}
 
 			if (!this.drag) {
-				let target = this.hoveredElements
+				let target = this.paused || e.button !== MOUSE.LEFT ? null : this.hoveredElements
 					.find(el => (
 						el.object._listeners &&
 						el.object._listeners['drag'] &&
@@ -88121,6 +88270,14 @@ ENDSEC
 					<div id="potree_annotation_container" 
 						style="position: absolute; z-index: 100000; width: 100%; height: 100%; pointer-events: none;"></div>`);
 					$(domElement).append(potreeAnnotationContainer);
+					potreeAnnotationContainer[0].addEventListener('wheel', e => {
+						e.preventDefault();
+						const rect = this.renderer.domElement.getBoundingClientRect();
+						this.inputHandler.mouse.set(e.clientX - rect.left, e.clientY - rect.top);
+						const event = new Event('mousewheel');
+						event.wheelDelta = -e.deltaY;
+						this.renderer.domElement.dispatchEvent(event);
+					}, {passive: false});
 				}
 
 				if ($(domElement).find('#potree_quick_buttons').length === 0) {
@@ -89558,6 +89715,59 @@ ENDSEC
 					return true;
 				}
 
+				if (annotation.hasView() && annotation.cameraPosition && annotation.cameraTarget) {
+					if (!annotation.marker) {
+						const w = 0.6;
+						const h = 0.4;
+						const geometry = new LineGeometry();
+						geometry.setPositions([
+							 0,  0,  0,
+							 w, -h, +1,
+
+							 0,  0,  0,
+							 w,  h, +1,
+
+							 0,  0,  0,
+							-w,  h, +1,
+
+							 0,  0,  0,
+							-w, -h, +1,
+
+							-w,  h, +1,
+							 w,  h, +1,
+							 w, -h, +1,
+						]);
+						annotation.marker = new Line2(geometry, new LineMaterial({
+							color: 0xffffff,
+							linewidth: 2,
+							resolution: new Vector2(1000, 1000),
+						}));
+						annotation.marker.up.set(0, 0, 1);
+
+						if (!this.markerScene) {
+							this.markerScene = new Scene();
+							this.addEventListener('render.pass.perspective_overlay', () => {
+								this.renderer.clearDepth();
+								this.renderer.render(this.markerScene, this.scene.getActiveCamera());
+							});
+						}
+						this.markerScene.add(annotation.marker);
+					}
+
+					const camera = this.scene.getActiveCamera();
+					const distance = camera.position.distanceTo(annotation.cameraPosition);
+					const perPixel = camera.isPerspectiveCamera
+						? 2 * distance * Math.tan(MathUtils.degToRad(camera.fov) / 2) / renderAreaSize.y
+						: (camera.top - camera.bottom) / camera.zoom / renderAreaSize.y;
+
+					annotation.marker.visible = annotation.visible && !this.recording;
+					annotation.marker.material.color.set(annotation === this.selectedItem ? 0xffff00 : 0xffffff);
+					annotation.marker.position.copy(annotation.cameraPosition);
+					annotation.marker.lookAt(annotation.cameraTarget);
+					annotation.marker.scale.setScalar(perPixel * 32);
+					annotation.marker.material.resolution.set(renderAreaSize.x, renderAreaSize.y);
+				}
+
 				if (!annotation.visible) {
 					return false;
 				}
@@ -89631,7 +89841,7 @@ ENDSEC
 
 			let notVisibleAnymore = new Set(this.visibleAnnotations);
 			for(let annotation of visibleNow){
-				annotation.display = true;
+				annotation.display = !(annotation.cameraPosition && annotation.cameraPosition.x != null);
 				
 				notVisibleAnymore.delete(annotation);
 			}
@@ -89903,7 +90113,7 @@ ENDSEC
 
 				// profile segments
 				for(let profile of this.scene.profiles){
-					boxes.push(...profile.boxes);
+					if(profile.visible) boxes.push(...profile.boxes);
 				}
 				
 				// Needed for .getInverse(), pre-empt a determinant of 0, see #815 / #816
@@ -89915,15 +90125,16 @@ ENDSEC
 					let boxInverse = box.matrixWorld.clone().invert();
 					let boxPosition = box.getWorldPosition(new Vector3());
 
-					return {box: box, inverse: boxInverse, position: boxPosition};
+					return {box: box, inverse: boxInverse, position: boxPosition, highlight: !(box instanceof BoxVolume)};
 				});
 
-				let clipPolygons = this.scene.polygonClipVolumes.filter(vol => vol.initialized);
+				let clipPolygons = this.scene.polygonClipVolumes.filter(vol => vol.initialized && vol.visible);
 				
 				// set clip volumes in material
 				for(let pointcloud of visiblePointClouds){
 					pointcloud.material.setClipBoxes(clipBoxes);
-					pointcloud.material.setClipPolygons(clipPolygons, this.clippingTool.maxPolygonVertices);
+					pointcloud.material.highlightProfiles = true;
+					pointcloud.material.setClipPolygons(clipPolygons);
 					pointcloud.material.clipTask = this.clipTask;
 					pointcloud.material.clipMethod = this.clipMethod;
 				}
@@ -90747,6 +90958,12 @@ ENDSEC
 	exports.TreeType = TreeType;
 	exports.Utils = Utils;
 	exports.VRControls = VRControls;
+	exports.VRButton = VRButton;
+	exports.GeoJSONExporter = GeoJSONExporter;
+	exports.DXFExporter = DXFExporter;
+	exports.ProfileWindow = ProfileWindow;
+	exports.ProfileWindowController = ProfileWindowController;
+	exports.MapView = MapView;
 	exports.Version = Version;
 	exports.Viewer = Viewer;
 	exports.Volume = Volume;

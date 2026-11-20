@@ -1238,11 +1238,13 @@ class Task(models.Model):
         """
         return {
             'id': str(self.id),
+            'name': self.name,
             'project': self.project.id,
             'available_assets': self.available_assets,
             'public': self.public,
             'public_edit': self.public_edit,
             'epsg': self.epsg,
+            'wkt': self.wkt,
             'srs': get_srs_name_units_from_epsg_or_wkt(self.epsg, self.wkt),
             'crop_projected': self.get_projected_crop() 
         }

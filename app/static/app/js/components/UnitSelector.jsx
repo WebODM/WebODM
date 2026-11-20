@@ -1,6 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { systems, getUnitSystem, setUnitSystem } from '../classes/Units';
+import { systems, getUnitSystem, setUnitSystem, onUnitSystemChanged, offUnitSystemChanged } from '../classes/Units';
 import '../css/UnitSelector.scss';
 
 class UnitSelector extends React.Component {
@@ -15,6 +15,18 @@ class UnitSelector extends React.Component {
     }
   }
   
+  componentDidMount(){
+    onUnitSystemChanged(this.handleUnitSystemChanged);
+  }
+
+  componentWillUnmount(){
+    offUnitSystemChanged(this.handleUnitSystemChanged);
+  }
+
+  handleUnitSystemChanged = e => {
+    this.setState({system: e.detail});
+  };
+
   handleChange = e => {
     this.setState({system: e.target.value});
     setUnitSystem(e.target.value);

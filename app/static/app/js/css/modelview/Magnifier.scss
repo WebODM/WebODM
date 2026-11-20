@@ -1,0 +1,11 @@
+.mv-magnifier{
+    display: none;
+    position: absolute;
+    z-index: 3;
+    width: 140px;
+    height: 140px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: #0d1316;
+    pointer-events: none;
+}
