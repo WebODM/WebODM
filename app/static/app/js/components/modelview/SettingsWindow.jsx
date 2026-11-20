@@ -2,6 +2,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import '../../css/modelview/Settings.scss';
 import UnitSelector from '../UnitSelector';
+import Trans from '../Trans';
 import { _, interpolate } from '../../classes/gettext';
 
 class SettingsWindow extends React.Component{
@@ -207,7 +208,7 @@ class SettingsWindow extends React.Component{
         this.row(_("Coordinate Unit"), "", <span>{task.srs.units || "m"}</span>),
         <div className="mv-settings-section" key="credits">{_("Credits")}</div>,
         <div className="mv-settings-credits" key="potree">
-          {_("This viewer is originally based on")} <a href="http://potree.org" target="_blank">Potree</a>{_(", a viewer for large point clouds developed at the Vienna University of Technology by")} Markus Schütz.
+          <Trans params={{link: '<a href="http://potree.org" target="_blank">Potree</a>'}}>{_("This viewer is originally based on %(link)s, a viewer for large point clouds developed at the Vienna University of Technology by Markus Schütz.")}</Trans>
         </div>
       ];
     }
