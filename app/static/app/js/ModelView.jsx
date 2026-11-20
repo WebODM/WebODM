@@ -68,6 +68,7 @@ class ModelView extends React.Component {
       splatsLoadProgress: null,
       selectedCamera: null,
       modalOpen: false,
+      vrPrompt: false,
       cameraScale: CAMERA_SCALES[props.task.srs.units] || 1.0,
       camerasVisible: false,
       pluginActionButtons: [],
@@ -309,6 +310,7 @@ class ModelView extends React.Component {
         vrButton.onEnd(() => viewer.dispatchEvent({type: "vr_end"}));
         this.vrButton = vrButton;
         this.setState({vr: true});
+        this.autoVR();
     });
 
     this.setState({viewer});
@@ -433,6 +435,9 @@ class ModelView extends React.Component {
             }, 3000);
           }).fail(e => {
             console.error("Cannot load 3D scene information", e);
+          }).always(() => {
+            this.sceneLoaded = true;
+            this.autoVR();
           });
         });
     });
@@ -455,6 +460,17 @@ class ModelView extends React.Component {
         pluginActionButtons: {$push: [button]}
       }));
     });
+  }
+
+  autoVR = () => {
+    if (this.autoVRShown || !this.sceneLoaded || !this.vrButton || window.location.protocol !== "https:" || Utils.queryParams(window.location).autovr !== "1") return;
+    this.autoVRShown = true;
+    this.setState({vrPrompt: true});
+  }
+
+  enterVR = () => {
+    this.setState({vrPrompt: false});
+    this.vrButton.element.click();
   }
 
   getHistoryData = () => {
@@ -1265,6 +1281,15 @@ class ModelView extends React.Component {
 
                     {viewer && this.settings.magnifier !== false ? <Magnifier viewer={viewer} /> : ""}
 
+                    {this.state.vrPrompt ?
+                    <div className="vr-prompt" onClick={() => this.setState({vrPrompt: false})}>
+                        <div className="vr-prompt-box" onClick={e => e.stopPropagation()}>
+                            <button type="button" className="vr-prompt-close" title={_("Close")} onClick={() => this.setState({vrPrompt: false})}><i className="fa fa-times"></i></button>
+                            <button type="button" className="btn btn-primary btn-lg btn-block" onClick={this.enterVR}><i className="fa fa-vr-cardboard"></i> {_("Enter VR")}</button>
+                            <button type="button" className="btn btn-secondary btn-lg btn-block" onClick={() => this.setState({vrPrompt: false})}><i className="fa fa-globe"></i> {_("Continue in Browser")}</button>
+                        </div>
+                    </div> : ""}
+
                     <Standby
                     message={initializingSplats ? _("Loading splats...") : _("Loading textured model...")}
                     show={initializing}
@@ -1288,6 +1313,7 @@ class ModelView extends React.Component {
                             popupPlacement="top"
                             linksTarget="3d"
                             queryParams={queryParams}
+                            showVr={true}
                         />
                         : ""}
                         <SwitchModeButton 

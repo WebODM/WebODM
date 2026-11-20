@@ -73,6 +73,17 @@
 			max-height: 32px;
 		}
 
+		.share-toggles{
+			flex: none;
+
+			.btn{
+				width: 31px;
+				margin-left: 4px;
+				padding-left: 0;
+				padding-right: 0;
+			}
+		}
+
 		.checkbox{
 			margin-top: 0;
 			&.last{

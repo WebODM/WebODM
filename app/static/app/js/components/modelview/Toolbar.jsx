@@ -262,7 +262,7 @@ class Toolbar extends React.Component{
 
     if (this.props.onEnterVR){
       groups.push({
-        id: "vr", icon: "mv-icon mv-icon-vr", title: _("VR"),
+        id: "vr", icon: "fa fa-vr-cardboard", title: _("VR"),
         onClick: this.props.onEnterVR
       });
     }

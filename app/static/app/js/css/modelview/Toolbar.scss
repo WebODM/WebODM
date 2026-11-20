@@ -71,6 +71,11 @@
             width: 20px;
             height: 20px;
             text-align: center;
+
+            &.fa-vr-cardboard{
+                font-size: 14px;
+                line-height: 20px;
+            }
         }
     }
 }

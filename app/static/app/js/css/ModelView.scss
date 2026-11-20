@@ -167,4 +167,51 @@
             }
         }
     }
+
+    .vr-prompt{
+        position: absolute;
+        inset: 0;
+        z-index: 2000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        background: rgba(0, 0, 0, 0.6);
+    }
+
+    .vr-prompt-box{
+        position: relative;
+        width: 100%;
+        max-width: 480px;
+        padding: 56px 32px 32px;
+        border-radius: 8px;
+        background: #263238;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+
+        .btn{
+            padding: 16px;
+            font-size: 22px;
+        }
+
+        .btn + .btn{
+            margin-top: 16px;
+        }
+    }
+
+    .vr-prompt-close{
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 40px;
+        height: 40px;
+        border: 0;
+        background: transparent;
+        color: #fff;
+        font-size: 22px;
+        opacity: 0.7;
+
+        &:hover{
+            opacity: 1;
+        }
+    }
 }
