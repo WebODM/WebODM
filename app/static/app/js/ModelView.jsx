@@ -20,6 +20,7 @@ import ProjectPanel from './components/modelview/ProjectPanel';
 import SettingsWindow from './components/modelview/SettingsWindow';
 import Magnifier from './components/modelview/Magnifier';
 import Roofs from './components/modelview/Roofs';
+import VRControls from './components/modelview/VRControls';
 import Highlight from './components/modelview/Highlight';
 import Reorient from './components/modelview/Reorient';
 import ProfilePanel from './components/modelview/ProfilePanel';
@@ -283,6 +284,18 @@ class ModelView extends React.Component {
     if (!container) return; // Enzyme tests don't have support for all WebGL methods so we just skip this
 
     window.viewer = new Potree.Viewer(container);
+    viewer.vrControls = new VRControls(viewer, {
+      modelTypes: [
+        {type: "cloud", label: _("Point Cloud")},
+        ...(this.hasTexturedModel() ? [{type: "mesh", label: _("Textured Model")}] : [])
+      ],
+      getModelType: this.getCurrentModelType,
+      setModelType: this.setModelType,
+      getLoading: () => {
+        if (this.state.initializingModel) return {message: _("Loading textured model..."), progress: this.state.texModelLoadProgress};
+        return null;
+      }
+    });
     viewer.setEDLEnabled(true);
     viewer.setFOV(60);
 

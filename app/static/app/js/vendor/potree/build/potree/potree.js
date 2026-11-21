@@ -87408,645 +87408,6 @@ ENDSEC
 
 	} )();
 
-	let fakeCam = new PerspectiveCamera();
-
-	function toScene(vec, ref){
-		let node = ref.clone();
-		node.updateMatrix();
-		node.updateMatrixWorld();
-
-		let result = vec.clone().applyMatrix4(node.matrix);
-		result.z -= 0.8 * node.scale.x;
-
-		return result;
-	};
-
-	function computeMove(vrControls, controller){
-
-		if(!controller || !controller.inputSource || !controller.inputSource.gamepad){
-			return null;
-		}
-
-		let pad = controller.inputSource.gamepad;
-
-		let axes = pad.axes;
-		// [0,1] are for touchpad, [2,3] for thumbsticks?
-		let y = 0;
-		if(axes.length === 2){
-			y = axes[1];
-		}else if(axes.length === 4){
-			y = axes[3];
-		}
-
-		y = Math.sign(y) * (2 * y) ** 2;
-
-		let maxSize = 0;
-		for(let pc of viewer.scene.pointclouds){
-			let size = pc.boundingBox.min.distanceTo(pc.boundingBox.max);
-			maxSize = Math.max(maxSize, size);
-		}
-		let multiplicator = Math.pow(maxSize, 0.5) / 2;
-
-		let scale = vrControls.node.scale.x;
-		let moveSpeed = viewer.getMoveSpeed();
-		let amount = multiplicator * y * (moveSpeed ** 0.5) / scale;
-
-
-		let rotation = new Quaternion().setFromEuler(controller.rotation);
-		let dir = new Vector3(0, 0, -1);
-		dir.applyQuaternion(rotation);
-
-		let move = dir.clone().multiplyScalar(amount);
-
-		let p1 = vrControls.toScene(controller.position);
-		let p2 = vrControls.toScene(controller.position.clone().add(move));
-
-		move = p2.clone().sub(p1);
-		
-		return move;
-	};
-
-
-	class FlyMode{
-
-		constructor(vrControls){
-			this.moveFactor = 1;
-			this.dbgLabel = null;
-		}
-
-		start(vrControls){
-			if(!this.dbgLabel){
-				this.dbgLabel = new Potree.TextSprite("abc");
-				this.dbgLabel.name = "debug label";
-				vrControls.viewer.sceneVR.add(this.dbgLabel);
-				this.dbgLabel.visible = false;
-			}
-		}
-		
-		end(){
-
-		}
-
-		update(vrControls, delta){
-
-			let primary = vrControls.cPrimary;
-			let secondary = vrControls.cSecondary;
-
-			let move1 = computeMove(vrControls, primary);
-			let move2 = computeMove(vrControls, secondary);
-
-
-			if(!move1){
-				move1 = new Vector3();
-			}
-
-			if(!move2){
-				move2 = new Vector3();
-			}
-
-			let move = move1.clone().add(move2);
-
-			move.multiplyScalar(-delta * this.moveFactor);
-			vrControls.node.position.add(move);
-			
-
-			let scale = vrControls.node.scale.x;
-
-			let camVR = vrControls.viewer.renderer.xr.getCamera(fakeCam);
-			
-			let vrPos = camVR.getWorldPosition(new Vector3());
-			let vrDir = camVR.getWorldDirection(new Vector3());
-			let vrTarget = vrPos.clone().add(vrDir.multiplyScalar(scale));
-
-			let scenePos = toScene(vrPos, vrControls.node);
-			let sceneDir = toScene(vrPos.clone().add(vrDir), vrControls.node).sub(scenePos);
-			sceneDir.normalize().multiplyScalar(scale);
-			let sceneTarget = scenePos.clone().add(sceneDir);
-
-			vrControls.viewer.scene.view.setView(scenePos, sceneTarget);
-
-			if(Potree.debug.message){
-				this.dbgLabel.visible = true;
-				this.dbgLabel.setText(Potree.debug.message);
-				this.dbgLabel.scale.set(0.1, 0.1, 0.1);
-				this.dbgLabel.position.copy(primary.position);
-			}
-		}
-	};
-
-	class TranslationMode{
-
-		constructor(){
-			this.controller = null;
-			this.startPos = null;
-			this.debugLine = null;
-		}
-
-		start(vrControls){
-			this.controller = vrControls.triggered.values().next().value;
-			this.startPos = vrControls.node.position.clone();
-		}
-		
-		end(vrControls){
-
-		}
-
-		update(vrControls, delta){
-
-			let start = this.controller.start.position;
-			let end = this.controller.position;
-
-			start = vrControls.toScene(start);
-			end = vrControls.toScene(end);
-
-			let diff = end.clone().sub(start);
-			diff.set(-diff.x, -diff.y, -diff.z);
-
-			let pos = new Vector3().addVectors(this.startPos, diff);
-
-			vrControls.node.position.copy(pos);
-		}
-
-	};
-
-	class RotScaleMode{
-
-		constructor(){
-			this.line = null;
-			this.startState = null;
-		}
-
-		start(vrControls){
-			if(!this.line){
-				this.line = Potree.Utils.debugLine(
-					vrControls.viewer.sceneVR, 
-					new Vector3(0, 0, 0),
-					new Vector3(0, 0, 0),
-					0xffff00,
-				);
-
-				this.dbgLabel = new Potree.TextSprite("abc");
-				this.dbgLabel.scale.set(0.1, 0.1, 0.1);
-				vrControls.viewer.sceneVR.add(this.dbgLabel);
-			}
-
-			this.line.node.visible = true;
-
-			this.startState = vrControls.node.clone();
-		}
-
-		end(vrControls){
-			this.line.node.visible = false;
-			this.dbgLabel.visible = false;
-		}
-
-		update(vrControls, delta){
-
-			let start_c1 = vrControls.cPrimary.start.position.clone();
-			let start_c2 = vrControls.cSecondary.start.position.clone();
-			let start_center = start_c1.clone().add(start_c2).multiplyScalar(0.5);
-			let start_c1_c2 = start_c2.clone().sub(start_c1);
-			let end_c1 = vrControls.cPrimary.position.clone();
-			let end_c2 = vrControls.cSecondary.position.clone();
-			let end_center = end_c1.clone().add(end_c2).multiplyScalar(0.5);
-			let end_c1_c2 = end_c2.clone().sub(end_c1);
-
-			let d1 = start_c1_c2.length();
-			let d2 = end_c1_c2.length();
-
-			let angleStart = new Vector2(start_c1_c2.x, start_c1_c2.z).angle();
-			let angleEnd = new Vector2(end_c1_c2.x, end_c1_c2.z).angle();
-			let angleDiff = angleEnd - angleStart;
-			
-			let scale = d2 / d1;
-
-			let node = this.startState.clone();
-			node.updateMatrix();
-			node.matrixAutoUpdate = false;
-
-			let mToOrigin = new Matrix4().makeTranslation(...toScene(start_center, this.startState).multiplyScalar(-1).toArray());
-			let mToStart = new Matrix4().makeTranslation(...toScene(start_center, this.startState).toArray());
-			let mRotate = new Matrix4().makeRotationZ(angleDiff);
-			let mScale = new Matrix4().makeScale(1 / scale, 1 / scale, 1 / scale);
-
-			node.applyMatrix4(mToOrigin);
-			node.applyMatrix4(mRotate);
-			node.applyMatrix4(mScale);
-			node.applyMatrix4(mToStart);
-
-			let oldScenePos = toScene(start_center, this.startState);
-			let newScenePos = toScene(end_center, node);
-			let toNew = oldScenePos.clone().sub(newScenePos);
-			let mToNew = new Matrix4().makeTranslation(...toNew.toArray());
-			node.applyMatrix4(mToNew);
-
-			node.matrix.decompose(node.position, node.quaternion, node.scale );
-
-			vrControls.node.position.copy(node.position);
-			vrControls.node.quaternion.copy(node.quaternion);
-			vrControls.node.scale.copy(node.scale);
-			vrControls.node.updateMatrix();
-
-			{
-				let scale = vrControls.node.scale.x;
-				let camVR = vrControls.viewer.renderer.xr.getCamera(fakeCam);
-				
-				let vrPos = camVR.getWorldPosition(new Vector3());
-				let vrDir = camVR.getWorldDirection(new Vector3());
-				let vrTarget = vrPos.clone().add(vrDir.multiplyScalar(scale));
-
-				let scenePos = toScene(vrPos, this.startState);
-				let sceneDir = toScene(vrPos.clone().add(vrDir), this.startState).sub(scenePos);
-				sceneDir.normalize().multiplyScalar(scale);
-				let sceneTarget = scenePos.clone().add(sceneDir);
-
-				vrControls.viewer.scene.view.setView(scenePos, sceneTarget);
-				vrControls.viewer.setMoveSpeed(scale);
-			}
-
-			{ // update "GUI"
-				this.line.set(end_c1, end_c2);
-
-				let scale = vrControls.node.scale.x;
-				this.dbgLabel.visible = true;
-				this.dbgLabel.position.copy(end_center);
-				this.dbgLabel.setText(`scale: 1 : ${scale.toFixed(2)}`);
-				this.dbgLabel.scale.set(0.05, 0.05, 0.05);
-			}
-
-		}
-
-	};
-
-
-	class VRControls extends EventDispatcher{
-
-		constructor(viewer){
-			super(viewer);
-
-			this.viewer = viewer;
-
-			viewer.addEventListener("vr_start", this.onStart.bind(this));
-			viewer.addEventListener("vr_end", this.onEnd.bind(this));
-
-			this.node = new Object3D();
-			this.node.up.set(0, 0, 1);
-			this.triggered = new Set();
-
-			let xr = viewer.renderer.xr;
-
-			{ // lights
-				
-				const light = new PointLight( 0xffffff, 5, 0, 1 );
-				light.position.set(0, 2, 0);
-				this.viewer.sceneVR.add(light);
-			}
-
-			this.menu = null;
-
-			const controllerModelFactory = new XRControllerModelFactory();
-
-			let sg = new SphereGeometry(1, 32, 32);
-			let sm = new MeshNormalMaterial();
-
-			{ // setup primary controller
-				let controller = xr.getController(0);
-
-				let grip = xr.getControllerGrip(0);
-				grip.name = "grip(0)";
-
-				// ADD CONTROLLERMODEL
-				grip.add( controllerModelFactory.createControllerModel( grip ) );
-				this.viewer.sceneVR.add(grip);
-
-				// ADD SPHERE
-				let sphere = new Mesh(sg, sm);
-				sphere.scale.set(0.005, 0.005, 0.005);
-
-				controller.add(sphere);
-				controller.visible = true;
-				this.viewer.sceneVR.add(controller);
-
-				{ // ADD LINE
-					
-					let lineGeometry = new LineGeometry();
-
-					lineGeometry.setPositions([
-						0, 0, -0.15,
-						0, 0, 0.05,
-					]);
-
-					let lineMaterial = new LineMaterial({ 
-						color: 0xff0000, 
-						linewidth: 2, 
-						resolution:  new Vector2(1000, 1000),
-					});
-
-					const line = new Line2(lineGeometry, lineMaterial);
-					
-					controller.add(line);
-				}
-
-
-				controller.addEventListener( 'connected', function ( event ) {
-					const xrInputSource = event.data;
-					controller.inputSource = xrInputSource;
-					// initInfo(controller);
-				});
-
-				controller.addEventListener( 'selectstart', () => {this.onTriggerStart(controller);});
-				controller.addEventListener( 'selectend', () => {this.onTriggerEnd(controller);});
-
-				this.cPrimary =  controller;
-
-			}
-
-			{ // setup secondary controller
-				let controller = xr.getController(1);
-
-				let grip = xr.getControllerGrip(1);
-
-				// ADD CONTROLLER MODEL
-				let model = controllerModelFactory.createControllerModel( grip );
-				grip.add(model);
-				this.viewer.sceneVR.add( grip );
-
-				// ADD SPHERE
-				let sphere = new Mesh(sg, sm);
-				sphere.scale.set(0.005, 0.005, 0.005);
-				controller.add(sphere);
-				controller.visible = true;
-				this.viewer.sceneVR.add(controller);
-
-				{ // ADD LINE
-					
-					let lineGeometry = new LineGeometry();
-
-					lineGeometry.setPositions([
-						0, 0, -0.15,
-						0, 0, 0.05,
-					]);
-
-					let lineMaterial = new LineMaterial({ 
-						color: 0xff0000, 
-						linewidth: 2, 
-						resolution:  new Vector2(1000, 1000),
-					});
-
-					const line = new Line2(lineGeometry, lineMaterial);
-					
-					controller.add(line);
-				}
-
-				controller.addEventListener( 'connected', (event) => {
-					const xrInputSource = event.data;
-					controller.inputSource = xrInputSource;
-					this.initMenu(controller);
-				});
-
-				controller.addEventListener( 'selectstart', () => {this.onTriggerStart(controller);});
-				controller.addEventListener( 'selectend', () => {this.onTriggerEnd(controller);});
-
-				this.cSecondary =  controller;
-			}
-
-			this.mode_fly = new FlyMode();
-			this.mode_translate = new TranslationMode();
-			this.mode_rotScale = new RotScaleMode();
-			this.setMode(this.mode_fly);
-		}
-
-		createSlider(label, min, max){
-
-			let sg = new SphereGeometry(1, 8, 8);
-			let cg = new CylinderGeometry(1, 1, 1, 8);
-			let matHandle = new MeshBasicMaterial({color: 0xff0000});
-			let matScale = new MeshBasicMaterial({color: 0xff4444});
-			let matValue = new MeshNormalMaterial();
-
-			let node = new Object3D("slider");
-			let nLabel = new Potree.TextSprite(`${label}: 0`);
-			let nMax = new Mesh(sg, matHandle);
-			let nMin = new Mesh(sg, matHandle);
-			let nValue = new Mesh(sg, matValue);
-			let nScale = new Mesh(cg, matScale);
-
-			nLabel.scale.set(0.2, 0.2, 0.2);
-			nLabel.position.set(0, 0.35, 0);
-
-			nMax.scale.set(0.02, 0.02, 0.02);
-			nMax.position.set(0, 0.25, 0);
-
-			nMin.scale.set(0.02, 0.02, 0.02);
-			nMin.position.set(0, -0.25, 0);
-
-			nValue.scale.set(0.02, 0.02, 0.02);
-			nValue.position.set(0, 0, 0);
-
-			nScale.scale.set(0.005, 0.5, 0.005);
-
-			node.add(nLabel);
-			node.add(nMax);
-			node.add(nMin);
-			node.add(nValue);
-			node.add(nScale);
-
-			return node;
-		}
-
-		createInfo(){ 
-
-			let texture = new TextureLoader().load(`${Potree.resourcePath}/images/vr_controller_help.jpg`);
-			let plane = new PlaneBufferGeometry(1, 1, 1, 1);
-			let infoMaterial = new MeshBasicMaterial({map: texture});
-			let infoNode = new Mesh(plane, infoMaterial);
-
-			return infoNode;
-		}
-
-		initMenu(controller){
-
-			if(this.menu){
-				return;
-			}
-
-			let node = new Object3D("vr menu");
-
-			// let nSlider = this.createSlider("speed", 0, 1);
-			// let nInfo = this.createInfo();
-
-			// // node.add(nSlider);
-			// node.add(nInfo);
-
-			// {
-			// 	node.rotation.set(-1.5, 0, 0)
-			// 	node.scale.set(0.3, 0.3, 0.3);
-			// 	node.position.set(-0.2, -0.002, -0.1)
-
-			// 	// nInfo.position.set(0.5, 0, 0);
-			// 	nInfo.scale.set(0.8, 0.6, 0);
-
-			// 	// controller.add(node);
-			// }
-
-			// node.position.set(-0.3, 1.2, 0.2);
-			// node.scale.set(0.3, 0.2, 0.3);
-			// node.lookAt(new THREE.Vector3(0, 1.5, 0.1));
-
-			// this.viewer.sceneVR.add(node);
-
-			this.menu = node;
-
-			// window.vrSlider = nSlider;
-			window.vrMenu = node;
-
-		}
-
-
-		toScene(vec){
-			let camVR = this.getCamera();
-
-			let mat = camVR.matrixWorld;
-			let result = vec.clone().applyMatrix4(mat);
-
-			return result;
-		}
-
-		toVR(vec){
-			let camVR = this.getCamera();
-
-			let mat = camVR.matrixWorld.clone();
-			mat.invert();
-			let result = vec.clone().applyMatrix4(mat);
-
-			return result;
-		}
-
-		setMode(mode){
-
-			if(this.mode === mode){
-				return;
-			}
-
-			if(this.mode){
-				this.mode.end(this);
-			}
-
-			for(let controller of [this.cPrimary, this.cSecondary]){
-
-				let start = {
-					position: controller.position.clone(),
-					rotation: controller.rotation.clone(),
-				};
-
-				controller.start = start;
-			}
-			
-			this.mode = mode;
-			this.mode.start(this);
-		}
-
-		onTriggerStart(controller){
-			this.triggered.add(controller);
-
-			if(this.triggered.size === 0){
-				this.setMode(this.mode_fly);
-			}else if(this.triggered.size === 1){
-				this.setMode(this.mode_translate);
-			}else if(this.triggered.size === 2){
-				this.setMode(this.mode_rotScale);
-			}
-		}
-
-		onTriggerEnd(controller){
-			this.triggered.delete(controller);
-
-			if(this.triggered.size === 0){
-				this.setMode(this.mode_fly);
-			}else if(this.triggered.size === 1){
-				this.setMode(this.mode_translate);
-			}else if(this.triggered.size === 2){
-				this.setMode(this.mode_rotScale);
-			}
-		}
-
-		onStart(){
-
-			let position = this.viewer.scene.view.position.clone();
-			let direction = this.viewer.scene.view.direction;
-			direction.multiplyScalar(-1);
-
-			let target = position.clone().add(direction);
-			target.z = position.z;
-
-			let scale = this.viewer.getMoveSpeed();
-
-			this.node.position.copy(position);
-			this.node.lookAt(target);
-			this.node.scale.set(scale, scale, scale);
-			this.node.updateMatrix();
-			this.node.updateMatrixWorld();
-		}
-
-		onEnd(){
-			
-		}
-
-
-		setScene(scene){
-			this.scene = scene;
-		}
-
-		getCamera(){
-			let reference = this.viewer.scene.getActiveCamera();
-			let camera = new PerspectiveCamera();
-
-			// let scale = this.node.scale.x;
-			let scale = this.viewer.getMoveSpeed();
-			//camera.near = 0.01 / scale;
-			camera.near = 0.1;
-			camera.far = 1000;
-			// camera.near = reference.near / scale;
-			// camera.far = reference.far / scale;
-			camera.up.set(0, 0, 1);
-			camera.lookAt(new Vector3(0, -1, 0));
-			camera.updateMatrix();
-			camera.updateMatrixWorld();
-
-			camera.position.copy(this.node.position);
-			camera.rotation.copy(this.node.rotation);
-			camera.scale.set(scale, scale, scale);
-			camera.updateMatrix();
-			camera.updateMatrixWorld();
-			camera.matrixAutoUpdate = false;
-			camera.parent = camera;
-
-			return camera;
-		}
-
-		update(delta){
-
-			
-
-			// if(this.mode === this.mode_fly){
-			// 	let ray = new THREE.Ray(origin, direction);
-				
-			// 	for(let object of this.selectables){
-
-			// 		if(object.intersectsRay(ray)){
-			// 			object.onHit(ray);
-			// 		}
-
-			// 	}
-
-			// }
-
-			this.mode.update(this, delta);
-
-			
-
-		}
-	};
 
 	// Adapted from three.js VRButton
 
@@ -89374,12 +88735,6 @@ ENDSEC
 				this.deviceControls.addEventListener('end', this.enableAnnotations.bind(this));
 			}
 
-			{ // create VR CONTROLS
-				this.vrControls = new VRControls(this);
-				this.vrControls.enabled = false;
-				this.vrControls.addEventListener('start', this.disableAnnotations.bind(this));
-				this.vrControls.addEventListener('end', this.enableAnnotations.bind(this));
-			}
 
 
 		};
@@ -90271,22 +89626,17 @@ ENDSEC
 
 			{ // render world scene
 				cam = makeCam();
-				cam.position.z -= 0.8 * cam.scale.x;
 				cam.parent = null;
-				// cam.near = 0.05;
 				cam.near = viewer.scene.getActiveCamera().near;
 				cam.far = viewer.scene.getActiveCamera().far;
 				cam.updateMatrix();
 				cam.updateMatrixWorld();
 
-				this.scene.scene.updateMatrix();
-				this.scene.scene.updateMatrixWorld();
+				view = cam.matrixWorld.clone().invert();
 				this.scene.scene.matrixAutoUpdate = false;
-
-				let camWorld = cam.matrixWorld.clone();
-				view = camWorld.clone().invert();
 				this.scene.scene.matrix.copy(view);
 				this.scene.scene.matrixWorld.copy(view);
+				this.scene.scene.updateMatrixWorld(true);
 
 				cam.matrix.identity();
 				cam.matrixWorld.identity();
@@ -90294,7 +89644,10 @@ ENDSEC
 
 				renderer.render(this.scene.scene, cam);
 
+				this.scene.scene.matrix.identity();
 				this.scene.scene.matrixWorld.identity();
+				this.scene.scene.updateMatrixWorld(true);
+
 
 			}
 			
@@ -90341,10 +89694,39 @@ ENDSEC
 				vrWorld.multiply(xrCamera.matrixWorld);
 				let vrView = vrWorld.clone().invert();
 
-				this.pRenderer.render(this.scene.scenePointCloud, xrCamera, null, {
-					viewOverride: vrView,
-				});
+				if(this.edlOpacity > 0){
+					this.pRenderer.render(this.scene.scenePointCloud, xrCamera, null, {
+						viewOverride: vrView,
+					});
+				}
 
+			}
+
+			{
+				cam = makeCam();
+				cam.parent = null;
+				cam.matrix.identity();
+				cam.matrixWorld.identity();
+				cam.matrixWorldInverse.identity();
+
+				if(this.measuringTool){
+					const measurements = this.measuringTool.scene;
+					const hidden = [];
+					measurements.traverse(o => {
+						if(o.visible && (o instanceof TextSprite || (o.isMesh && o.geometry && o.geometry.type === "SphereGeometry"))){
+							o.visible = false;
+							hidden.push(o);
+						}
+					});
+					measurements.matrixAutoUpdate = false;
+					measurements.matrix.copy(view);
+					measurements.matrixWorld.copy(view);
+					renderer.render(measurements, cam);
+					measurements.matrix.identity();
+					measurements.matrixWorld.identity();
+					measurements.matrixAutoUpdate = true;
+					for(const o of hidden) o.visible = true;
+				}
 			}
 
 			{ // render VR scene
@@ -90957,7 +90339,7 @@ ENDSEC
 	exports.TransformationTool = TransformationTool;
 	exports.TreeType = TreeType;
 	exports.Utils = Utils;
-	exports.VRControls = VRControls;
+	exports.XRControllerModelFactory = XRControllerModelFactory;
 	exports.VRButton = VRButton;
 	exports.GeoJSONExporter = GeoJSONExporter;
 	exports.DXFExporter = DXFExporter;
