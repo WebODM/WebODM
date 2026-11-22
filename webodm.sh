@@ -20,6 +20,7 @@ fi
 
 dev_mode=false
 gpu=false
+mimalloc=false
 
 # define realpath replacement function
 if [[ $platform = "MacOS / OSX" ]]; then
@@ -114,6 +115,10 @@ case $key in
     gpu=true
     shift # past argument
     ;;
+    --mimalloc)
+    mimalloc=true
+    shift # past argument
+    ;;
     --broker)
     export WO_BROKER="$2"
     shift # past argument
@@ -202,6 +207,7 @@ usage(){
   echo "	--broker	Set the URL used to connect to the celery broker (default: $DEFAULT_BROKER)"
   echo "	--detached	Run WebODM in detached mode. This means WebODM will run in the background, without blocking the terminal (default: disabled)"
   echo "	--gpu	Use GPU NodeODM nodes (Linux only) (default: disabled)"
+  echo "	--mimalloc	Use mimalloc as the memory allocator in the default processing node (default: disabled)"
   echo "	--settings	Path to a settings.py file to enable modifications of system settings (default: None)"
   echo "	--worker-memory	Maximum amount of memory allocated for the worker process (default: unlimited)"
   echo "	--worker-cpus	Maximum number of CPUs allocated for the worker process (default: all)"
@@ -434,6 +440,10 @@ start(){
 
 		if [ ! -z "$WO_NODE_DIR" ]; then
 			command+=" -f docker-compose.nodeodx.volume.yml"
+		fi
+
+		if [[ $mimalloc = true ]]; then
+			command+=" -f docker-compose.nodeodx.mimalloc.yml"
 		fi
     fi
 

@@ -1,0 +1,7 @@
+# Chaining this file to the main docker-compose file makes
+# the default processing node use mimalloc as its memory allocator.
+
+services:
+  node-odx-1:
+    environment:
+      - ODX_MIMALLOC=YES
