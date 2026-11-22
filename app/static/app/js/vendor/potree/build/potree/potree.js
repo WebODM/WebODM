@@ -89709,23 +89709,40 @@ ENDSEC
 				cam.matrixWorld.identity();
 				cam.matrixWorldInverse.identity();
 
-				if(this.measuringTool){
-					const measurements = this.measuringTool.scene;
+				const eye = xrCameras.cameras[0];
+				const eyePosition = new Vector3().setFromMatrixPosition(eye.matrixWorld);
+				const unitsPerPixel = 2 / (eye.projectionMatrix.elements[5] * eye.viewport.height);
+				const up = new Vector3(0, 1, 0).transformDirection(eye.matrixWorldInverse);
+				const roll = Math.atan2(-up.x, up.y);
+				for(const tool of [this.measuringTool, this.profileTool, this.volumeTool]){
+					if(!tool || this.vrControls.measureMode === "off") continue;
+					const scene = tool.scene;
+					scene.matrixAutoUpdate = false;
+					scene.matrix.copy(view);
+					scene.matrixWorld.copy(view);
+					scene.updateMatrixWorld(true);
 					const hidden = [];
-					measurements.traverse(o => {
-						if(o.visible && (o instanceof TextSprite || (o.isMesh && o.geometry && o.geometry.type === "SphereGeometry"))){
+					const scaled = [];
+					scene.traverse(o => {
+						if(!o.visible) return;
+						let owner = o;
+						while(owner && !this.vrControls.labeled.has(owner)) owner = owner.parent;
+						if((o.isMesh && o.geometry && o.geometry.type === "SphereGeometry") || (o instanceof TextSprite && !owner)){
 							o.visible = false;
 							hidden.push(o);
+						}else if(o instanceof TextSprite){
+							const inherited = new Vector3().setFromMatrixScale(o.matrixWorld).x / o.scale.x;
+							scaled.push([o, o.scale.clone()]);
+							o.material.rotation = roll;
+							o.scale.setScalar(70 * unitsPerPixel * eyePosition.distanceTo(new Vector3().setFromMatrixPosition(o.matrixWorld)) / inherited);
 						}
 					});
-					measurements.matrixAutoUpdate = false;
-					measurements.matrix.copy(view);
-					measurements.matrixWorld.copy(view);
-					renderer.render(measurements, cam);
-					measurements.matrix.identity();
-					measurements.matrixWorld.identity();
-					measurements.matrixAutoUpdate = true;
+					renderer.render(scene, cam);
+					scene.matrix.identity();
+					scene.matrixWorld.identity();
+					scene.matrixAutoUpdate = true;
 					for(const o of hidden) o.visible = true;
+					for(const [o, scale] of scaled){ o.scale.copy(scale); o.material.rotation = 0; }
 				}
 			}
 

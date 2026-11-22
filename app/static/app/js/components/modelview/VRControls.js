@@ -1,5 +1,6 @@
 import * as THREE from 'THREE';
 import { _ } from '../../classes/gettext';
+import { systems, getUnitSystem, setUnitSystem } from '../../classes/Units';
 
 const SLIDE_SPEED = 3;
 const COMFORT_ASSIST = 0.5;
@@ -67,7 +68,6 @@ class VRControls{
     this.loadingState = "";
     this.mode = "walk";
     this.scale = 1;
-    this.worldScale = 1;
     this.eyeOffset = 0;
     this.calibrate = false;
     this.place = false;
@@ -84,13 +84,22 @@ class VRControls{
     this.rigInverse = new THREE.Matrix4();
     this.rigQuaternion = new THREE.Quaternion();
     this.hands = {};
-    this.previous = {turn: 0, teleport: false, jump: false};
+    this.previous = {turn: 0, teleport: false, jump: false, toggle: false, trigger: false, leftTrigger: false};
+    this.measureMode = "measure";
+    this.drag = null;
+    this.editHand = "right";
+    this.hover = null;
+    this.hits = new Set();
+    this.editing = new Set();
     this.hit = null;
     this.pinch = null;
     this.grab = null;
     this.pointBudget = null;
     this.recenter = false;
+    this.recenterStart = 0;
+    this.recenterRetry = 0;
     this.lastTipZ = 1;
+    this.labeled = new Set();
     this.markerPosition = new THREE.Vector3();
     this.markerQuaternion = new THREE.Quaternion();
     this.markerTarget = new THREE.Object3D();
@@ -147,6 +156,11 @@ class VRControls{
     this.loadingPanel.visible = false;
     this.headGroup.add(this.cover, this.loadingPanel);
 
+    this.pins = new THREE.Group();
+    this.pinGeometry = new THREE.ConeGeometry(0.5, 1, 4).rotateX(Math.PI).translate(0, 0.5, 0);
+    this.pinMaterial = new THREE.MeshBasicMaterial({color: 0xff2222, transparent: true, opacity: 0.6, depthWrite: false});
+    this.pinHoverMaterial = new THREE.MeshBasicMaterial({color: 0xff2222});
+
     this.marker = new THREE.Mesh(new THREE.RingGeometry(0.12, 0.15).translate(0, 0, 0.02), new THREE.MeshBasicMaterial());
     this.marker.visible = false;
 
@@ -167,6 +181,11 @@ class VRControls{
 
     this.pointer = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]), new THREE.LineBasicMaterial({color: 0xffffff}));
     this.pointer.visible = false;
+    this.laser = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]), new THREE.LineBasicMaterial({color: 0xff3333}));
+    this.laser.visible = false;
+    this.dragLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({color: 0xffffff}));
+    this.dragLine.frustumCulled = false;
+    this.dragLine.visible = false;
 
     this.watch = new THREE.Group();
     this.watch.position.copy(WATCH_POSITION);
@@ -187,6 +206,7 @@ class VRControls{
 
     const rows = [[_("Mode"), [["mode", "walk", _("Walk")], ["mode", "tabletop", _("Tabletop")]]]];
     if (modelTypes.length > 1) rows.push([_("Model"), modelTypes.map(t => ["model", t.type, t.label])]);
+    rows.push([_("Units"), Object.keys(systems).map(k => ["units", k, systems[k].getName()])]);
     this.paletteHeight = MARGIN + rows.length * (TITLE + ROW + MARGIN);
     const sides = [0x3a3a3a, 0x3a3a3a, 0x4a4a4a, 0x252525];
     const titleTexture = canvasTexture(512, Math.round(512 * this.paletteHeight / PALETTE_WIDTH));
@@ -231,7 +251,7 @@ class VRControls{
     });
     titleTexture.needsUpdate = true;
 
-    viewer.sceneVR.add(this.headGroup, this.marker, this.line, this.pointer);
+    viewer.sceneVR.add(this.headGroup, this.marker, this.line, this.pointer, this.laser, this.dragLine, this.pins);
     viewer.addEventListener("vr_start", this.start);
     viewer.addEventListener("vr_end", () => {
       if (this.pointBudget !== null) viewer.setPointBudget(this.pointBudget);
@@ -242,6 +262,12 @@ class VRControls{
   start = () => {
     const viewer = this.viewer;
     this.pointBudget = viewer.getPointBudget();
+    this.measureMode = "measure";
+    this.drag = null;
+    this.editHand = "right";
+    this.hover = null;
+    this.hits = new Set();
+    this.editing = new Set();
     viewer.setPointBudget(Math.min(this.pointBudget, 2000000));
     const view = viewer.scene.view;
     const direction = view.direction;
@@ -282,11 +308,10 @@ class VRControls{
     return camera;
   }
 
-  setScene(scene){
-    this.scene = scene;
+  setScene(){
   }
 
-  raycast(a, b){
+  raycast(a, b, thick = 0){
     const local = new THREE.Matrix4();
     const la = new THREE.Vector3();
     const lb = new THREE.Vector3();
@@ -307,7 +332,8 @@ class VRControls{
         const size = geometryNode.boundingBox.getSize(new THREE.Vector3());
         const minX = Math.min(la.x, lb.x) - r, maxX = Math.max(la.x, lb.x) + r;
         const minY = Math.min(la.y, lb.y) - r, maxY = Math.max(la.y, lb.y) + r;
-        const minZ = Math.min(la.z, lb.z), maxZ = Math.max(la.z, lb.z);
+        const tolerance = thick * r;
+        const minZ = Math.min(la.z, lb.z) - tolerance, maxZ = Math.max(la.z, lb.z) + tolerance;
         if (maxX < 0 || maxY < 0 || maxZ < 0 || minX > size.x || minY > size.y || minZ > size.z) continue;
 
         for (const child of node.children) if (child && child.sceneNode) stack.push(child);
@@ -360,7 +386,7 @@ class VRControls{
                 t1 = Math.min(1, tc + half);
                 if (t0 > t1) continue;
               }else if ((x - la.x) * (x - la.x) + (y - la.y) * (y - la.y) > r2) continue;
-              if (la.z + dz * t0 < z || la.z + dz * t1 > z) continue;
+              if (la.z + dz * t0 + tolerance < z || la.z + dz * t1 - tolerance > z) continue;
               const t = dz < 0 ? Math.min(t1, Math.max(t0, (la.z - z) / -dz)) : t0;
               if (t < foundT){
                 found = i;
@@ -417,6 +443,9 @@ class VRControls{
     const move = stick(pad(left));
     const turn = stick(pad(right));
     const jump = pressed(pad(right), 4);
+    const toggle = pressed(pad(right), 5) || pressed(pad(left), 5);
+    if (toggle && !this.previous.toggle) this.measureMode = this.measureMode === "measure" ? "off" : "measure";
+    this.previous.toggle = toggle;
     const trigger = pressed(pad(right), 0);
     const pinching = this.mode === "tabletop" && !!left && !!right &&(trigger || pressed(pad(right), 1)) && (pressed(pad(left), 0) || pressed(pad(left), 1));
     const teleportAxis = Math.hypot(turn.x, turn.y) >= THRESHOLD && Math.abs(turn.y) >= Math.abs(turn.x);
@@ -474,8 +503,9 @@ class VRControls{
       this.updateRig();
     }
 
-    if (this.recenter){
-      this.recenter = false;
+    const now = performance.now();
+    if (this.recenter && now >= this.recenterRetry){
+      if (!this.recenterStart) this.recenterStart = now;
       const box = viewer.getBoundingBox();
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
@@ -488,19 +518,27 @@ class VRControls{
           ground = this.raycast(new THREE.Vector3(x, y, box.max.z + 1), new THREE.Vector3(x, y, box.min.z - 1));
         }
       }
-      this.position.copy(ground ? ground.point : new THREE.Vector3(center.x, center.y, box.min.z));
+      if (ground || !this.recenterRetry){
+        this.position.copy(ground ? ground.point : new THREE.Vector3(center.x, center.y, box.min.z));
         this.velocity.set(0, 0, 0);
-      this.grounded = false;
-      this.updating = true;
-      this.lastUpdate = performance.now();
-      this.updateRig();
+        this.grounded = false;
+        this.updating = true;
+        this.lastUpdate = now;
+        this.updateRig();
+      }
+      this.recenterRetry = now + 500;
+      if (ground || now - this.recenterStart > 5000){
+        this.recenter = false;
+        this.recenterStart = 0;
+        this.recenterRetry = 0;
+      }
     }
 
     if (this.place){
       this.place = false;
       const box = viewer.getBoundingBox();
       const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1e-3);
-      this.scale = this.worldScale = radius / TABLE_RADIUS;
+      this.scale = radius / TABLE_RADIUS;
       const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(headQuaternion);
       forward.y = 0;
       if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
@@ -524,7 +562,7 @@ class VRControls{
         this.velocity.set(0, 0, 0);
       }
       this.yaw = this.pinch.yaw - (angle - this.pinch.angle);
-      this.scale = this.worldScale = this.pinch.scale * this.pinch.distance / distance;
+      this.scale = this.pinch.scale * this.pinch.distance / distance;
       this.position.set(0, 0, 0);
       this.updateRig();
       this.position.copy(this.pinch.anchor).sub(middle.clone().applyMatrix4(this.rig));
@@ -579,6 +617,133 @@ class VRControls{
       }
     }
 
+    const leftTrigger = pressed(pad(left), 0);
+    const leftEdge = leftTrigger && !this.previous.leftTrigger, rightEdge = trigger && !this.previous.trigger && !pointerBusy;
+    this.previous.leftTrigger = leftTrigger;
+    this.previous.trigger = trigger;
+    const measuring = this.measureMode === "measure";
+    if (!this.drag && (leftEdge || rightEdge)) this.editHand = leftEdge ? "left" : "right";
+    const editHand = this.hands[this.editHand];
+    const laserHand = measuring && !pinching && editHand && !(editHand === right && pointerBusy) ? editHand : null;
+    const holding = !!laserHand && (laserHand === left ? leftTrigger : trigger);
+    const edge = !!laserHand && (laserHand === left ? leftEdge : rightEdge);
+    const buzz = hand => {
+      const haptic = pad(hand) && pad(hand).hapticActuators && pad(hand).hapticActuators[0];
+      if (haptic) haptic.pulse(0.15, 25);
+    };
+    const measurements = [...viewer.scene.measurements, ...viewer.scene.profiles];
+    for (const measurement of this.editing) if (!measuring || !measurement.visible || !measurements.includes(measurement)) this.editing.delete(measurement);
+    if (this.drag && (this.drag.hand !== laserHand || !holding || !this.editing.has(this.drag.measurement))){
+      this.drag.measurement.dispatchEvent({type: "marker_dropped", [this.drag.measurement instanceof Potree.Profile ? "profile" : "measurement"]: this.drag.measurement, index: this.drag.index});
+      buzz(this.drag.hand);
+      this.drag = null;
+    }
+    let nearest = 200 * s;
+    const origin = laserHand && laserHand.ray.position.clone().applyMatrix4(this.rig);
+    const direction = laserHand && new THREE.Vector3(0, 0, -1).applyQuaternion(laserHand.ray.quaternion).applyQuaternion(this.rigQuaternion);
+    const forward = laserHand && new THREE.Vector3(0, 0, -1).applyQuaternion(laserHand.ray.quaternion);
+    if (this.drag){
+      const turn = Math.atan2(-forward.x, -forward.z) - this.drag.handYaw;
+      const yaw = this.drag.yaw + Math.atan2(Math.sin(turn), Math.cos(turn));
+      const pitch = Math.max(-1.55, Math.min(1.55, this.drag.pitch + (tabletop ? 2 : 1) * (Math.asin(forward.y) - this.drag.handPitch)));
+      if (Math.abs(pitch - this.drag.pitch) + Math.abs(yaw - this.drag.yaw) > 0.003) this.drag.moved = true;
+      if (this.drag.moved){
+        const ray = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)).applyQuaternion(this.rigQuaternion);
+        let hit = null;
+        for (const thick of [0, 0.25]) for (let i = 0; i < 100 && !hit; i++) hit = this.raycast(origin.clone().addScaledVector(ray, i * 2 * s), origin.clone().addScaledVector(ray, (i + 1) * 2 * s), thick);
+        const point = this.drag.measurement.points[this.drag.index];
+        const level = (point.position || point).z;
+        if (hit) this.drag.measurement.setPosition(this.drag.index, hit.point);
+        else if (ray.z < 0 && (level - origin.z) / ray.z > 0) this.drag.measurement.setPosition(this.drag.index, origin.clone().addScaledVector(ray, (level - origin.z) / ray.z));
+      }
+    }
+
+    const hits = new Set();
+    if (laserHand && !this.drag){
+      for (const measurement of measurements){
+        if (!measurement.visible) continue;
+        const points = measurement.points.map(p => p.position || p);
+        if (!points.length) continue;
+        const edges = Math.max(1, measurement.closed && points.length > 2 ? points.length : points.length - 1);
+        for (let i = 0; i < edges; i++){
+          const a = points[i].clone().sub(origin);
+          const u = points[(i + 1) % points.length].clone().sub(points[i]);
+          const uu = u.dot(u), ud = u.dot(direction), denominator = uu - ud * ud;
+          const k = denominator > 1e-12 ? Math.min(1, Math.max(0, (ud * a.dot(direction) - a.dot(u)) / denominator)) : 0;
+          const closest = a.addScaledVector(u, k);
+          const t = Math.max(0, closest.dot(direction));
+          if (closest.distanceTo(direction.clone().multiplyScalar(t)) < Math.max(0.03 * s, t * 0.026)){
+            hits.add(measurement);
+            nearest = Math.min(nearest, t);
+          }
+        }
+      }
+    }
+
+    let pins = 0;
+    let pinHover = null;
+    let pinNearest = Infinity;
+    let highlight = null;
+    const rayDirection = laserHand && new THREE.Vector3(0, 0, -1).applyQuaternion(laserHand.ray.quaternion);
+    const h = (tabletop ? 5 : 1) / s, w = (tabletop ? 1.875 : 0.3) / s;
+    for (const measurement of this.editing){
+      measurement.points.forEach((point, index) => {
+        if (pins === this.pins.children.length) this.pins.add(new THREE.Mesh(this.pinGeometry, this.pinMaterial));
+        const pin = this.pins.children[pins++];
+        const tip = (point.position || point).clone().applyMatrix4(this.rigInverse);
+        pin.position.copy(tip);
+        pin.scale.set(w, h, w);
+        pin.visible = true;
+        pin.material = this.pinMaterial;
+        if (this.drag && this.drag.measurement === measurement && this.drag.index === index) highlight = pin;
+        if (laserHand && !this.drag){
+          const a = tip.clone().sub(laserHand.ray.position);
+          const ud = h * rayDirection.y, denominator = h * h - ud * ud;
+          const k = denominator > 1e-12 ? Math.min(1, Math.max(0, (ud * a.dot(rayDirection) - h * a.y) / denominator)) : 0;
+          a.y += h * k;
+          const t = a.dot(rayDirection);
+          if (t > 0 && t < pinNearest && a.distanceTo(rayDirection.clone().multiplyScalar(t)) < w / 2 + 0.01){
+            pinNearest = t;
+            pinHover = {hand: laserHand, measurement, index};
+            highlight = pin;
+          }
+        }
+      });
+    }
+    for (let i = pins; i < this.pins.children.length; i++) this.pins.children[i].visible = false;
+    if (highlight) highlight.material = this.pinHoverMaterial;
+    if (pinHover) nearest = Math.min(nearest, pinNearest * s);
+
+    if ((pinHover && (!this.hover || this.hover.measurement !== pinHover.measurement || this.hover.index !== pinHover.index)) || [...hits].some(m => !this.hits.has(m))) buzz(laserHand);
+    this.hover = pinHover;
+    this.hits = hits;
+    if (edge){
+      if (pinHover){
+        const point = pinHover.measurement.points[pinHover.index];
+        const aim = (point.position || point).clone().applyMatrix4(this.rigInverse).sub(laserHand.ray.position).normalize();
+        this.drag = {...pinHover, pitch: Math.asin(aim.y), yaw: Math.atan2(-aim.x, -aim.z), handPitch: Math.asin(forward.y), handYaw: Math.atan2(-forward.x, -forward.z), moved: false};
+        this.hover = null;
+      }else this.editing = new Set(hits);
+    }
+
+    this.labeled = new Set(hits);
+    if (this.drag) this.labeled.add(this.drag.measurement);
+    this.laser.visible = !!laserHand && !this.drag;
+    this.dragLine.visible = !!this.drag;
+    if (this.drag){
+      const point = this.drag.measurement.points[this.drag.index];
+      const positions = this.dragLine.geometry.attributes.position;
+      positions.setXYZ(0, this.drag.hand.ray.position.x, this.drag.hand.ray.position.y, this.drag.hand.ray.position.z);
+      const tip = (point.position || point).clone().applyMatrix4(this.rigInverse);
+      positions.setXYZ(1, tip.x, tip.y, tip.z);
+      positions.needsUpdate = true;
+    }
+    if (this.laser.visible){
+      this.laser.position.copy(laserHand.ray.position);
+      this.laser.quaternion.copy(laserHand.ray.quaternion);
+      this.laser.scale.set(1, 1, nearest / s);
+    }
+
     let activated = null;
     let touched = null;
     if (tip){
@@ -605,6 +770,7 @@ class VRControls{
       if (button.press >= TRAVEL * 0.9 && button.armed){
         button.armed = false;
         activated = button;
+        buzz(right);
       }else if (button.press < TRAVEL * 0.3) button.armed = true;
       button.mesh.scale.z = (EXTRUDE - button.press) / EXTRUDE;
     }
@@ -613,6 +779,8 @@ class VRControls{
 
     if (activated && activated.group === "model"){
       this.setModelType(activated.key);
+    }else if (activated && activated.group === "units"){
+      setUnitSystem(activated.key);
     }else if (activated && activated.key !== this.mode){
       this.mode = activated.key;
       this.scale = 1;
@@ -626,8 +794,9 @@ class VRControls{
     }
 
     const modelType = this.getModelType();
+    const units = getUnitSystem();
     for (const button of this.buttons){
-      const active = button.group === "mode" ? button.key === this.mode : button.key === modelType;
+      const active = button.group === "mode" ? button.key === this.mode : button.group === "units" ? button.key === units : button.key === modelType;
       const state = `${active}|${button === hover}`;
       if (state === button.state) continue;
       button.state = state;
@@ -653,8 +822,8 @@ class VRControls{
       button.texture.needsUpdate = true;
     }
 
-    const now = new Date();
-    const time = `${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const date = new Date();
+    const time = `${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`;
     if (time !== this.clockTime){
       this.clockTime = time;
       const c = this.clockTexture.image.getContext("2d");
@@ -678,7 +847,7 @@ class VRControls{
       c.lineWidth = 3;
       c.strokeRect(106, 166, 44, 30);
       c.font = "bold 22px sans-serif";
-      c.fillText(String(now.getDate()), 128, 182);
+      c.fillText(String(date.getDate()), 128, 182);
       this.clockTexture.needsUpdate = true;
     }
 
@@ -750,7 +919,7 @@ class VRControls{
     if (input > 0){
       this.movement.set(move.x, 0, move.y).applyQuaternion(headQuaternion);
       this.movement.y = 0;
-      this.movement.normalize().multiplyScalar(input * SLIDE_SPEED * s).applyQuaternion(this.rigQuaternion);
+      this.movement.normalize().multiplyScalar(input * SLIDE_SPEED * s * (this.mode === "tabletop" ? 0.2 : 1)).applyQuaternion(this.rigQuaternion);
       this.updating = true;
       this.lastUpdate = performance.now();
       vignetteTarget = input * COMFORT_ASSIST;

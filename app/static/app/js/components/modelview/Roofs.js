@@ -156,7 +156,10 @@ class Roofs{
     const viewer = this.viewer;
     const faces = viewer.scene.measurements.filter(m => m.kind === "roof");
     const drag = viewer.inputHandler.drag;
-    const held = drag && drag.object && drag.object.parent && drag.object.parent.kind === "roof" ? {face: drag.object.parent, index: drag.object.parent.spheres.indexOf(drag.object)} : null;
+    const vr = viewer.renderer.xr.isPresenting;
+    const vrDrag = vr && viewer.vrControls && viewer.vrControls.drag;
+    const held = vrDrag ? (vrDrag.measurement.kind === "roof" ? {face: vrDrag.measurement, index: vrDrag.index} : null) :
+                 drag && drag.object && drag.object.parent && drag.object.parent.kind === "roof" ? {face: drag.object.parent, index: drag.object.parent.spheres.indexOf(drag.object)} : null;
     if (held && held.index >= 0 && (!this.dragged || this.dragged.face !== held.face || this.dragged.index !== held.index)){
       const at = held.face.points[held.index].position;
       this.group = [];
@@ -176,6 +179,11 @@ class Roofs{
       const p = v.clone().project(camera);
       return new THREE.Vector2((p.x + 1) / 2 * width, (1 - p.y) / 2 * height);
     };
+    const gap = (a, b) => {
+      if (!vr) return screen(a).distanceTo(screen(b));
+      const eye = viewer.scene.view.position;
+      return a.clone().sub(eye).angleTo(b.clone().sub(eye)) / 0.026 * 20;
+    };
 
     for (const item of [this.dragged, held]){
       if (!item || item.index < 0 || item.index >= item.face.points.length) continue;
@@ -183,15 +191,14 @@ class Roofs{
       const point = item.face.points[item.index].position;
       const others = faces.filter(m => m !== item.face && m.points.length >= 2);
       let best = null;
-      const at = screen(point);
       let distance = 20;
 
       let own = false;
 
       if (!item.face.open && item.face.points.length > 3){
         item.face.points.forEach((p, i) => {
-          if (i !== item.index && !grouped.has(p) && screen(p.position).distanceTo(at) <= distance){
-            distance = screen(p.position).distanceTo(at);
+          if (i !== item.index && !grouped.has(p) && gap(p.position, point) <= distance){
+            distance = gap(p.position, point);
             best = p.position.clone();
             own = true;
           }
@@ -201,8 +208,8 @@ class Roofs{
       if (!best){
         for (const other of others){
           for (const p of other.points){
-            if (!grouped.has(p) && screen(p.position).distanceTo(at) <= distance){
-              distance = screen(p.position).distanceTo(at);
+            if (!grouped.has(p) && gap(p.position, point) <= distance){
+              distance = gap(p.position, point);
               best = p.position.clone();
             }
           }
@@ -214,8 +221,8 @@ class Roofs{
           other.points.forEach((p, i) => {
             if (grouped.has(p) || grouped.has(other.points[(i + 1) % other.points.length])) return;
             const onEdge = new THREE.Line3(p.position, other.points[(i + 1) % other.points.length].position).closestPointToPoint(point, true, new THREE.Vector3());
-            if (screen(onEdge).distanceTo(at) <= distance){
-              distance = screen(onEdge).distanceTo(at);
+            if (gap(onEdge, point) <= distance){
+              distance = gap(onEdge, point);
               best = onEdge;
             }
           });
