@@ -291,6 +291,8 @@ class ModelView extends React.Component {
       ],
       getModelType: this.getCurrentModelType,
       setModelType: this.setModelType,
+      undo: () => this.restoreHistory(this.historyIndex - 1),
+      redo: () => this.restoreHistory(this.historyIndex + 1),
       getLoading: () => {
         if (this.state.initializingModel) return {message: _("Loading textured model..."), progress: this.state.texModelLoadProgress};
         return null;
@@ -536,7 +538,7 @@ class ModelView extends React.Component {
   }
 
   recordHistory = () => {
-    if (viewer.inputHandler.drag || viewer.scene.cameraAnimations.some(a => a.dragging) || this.reorient.active()) return;
+    if (viewer.inputHandler.drag || viewer.vrControls.drag || viewer.scene.cameraAnimations.some(a => a.dragging) || this.reorient.active()) return;
 
     const data = this.getHistoryData();
     const prevData = this.history[this.historyIndex].data;
@@ -567,7 +569,7 @@ class ModelView extends React.Component {
   }
 
   restoreHistory = (index) => {
-    if (index < 0 || index >= this.history.length || viewer.inputHandler.drag) return;
+    if (index < 0 || index >= this.history.length || viewer.inputHandler.drag || viewer.vrControls.drag) return;
 
     const scene = viewer.scene;
     const live = Potree.saveProject(viewer);
@@ -812,7 +814,8 @@ class ModelView extends React.Component {
     if (evt.button !== 2 || this.placingOnMouseDown || viewer.inputHandler.getNormalizedDrag().length() !== 0) return;
 
     const hovered = viewer.inputHandler.hoveredElements.map(h => h.object);
-    const item = viewer.scene.measurements.concat(viewer.scene.profiles).find(m => m.spheres.some(s => hovered.indexOf(s) !== -1)) || viewer.scene.volumes.find(v => hovered.indexOf(v) !== -1) || this.pointOfViewAt(evt);
+    const roof = viewer.roofTool.pick(viewer.selectedItem);
+    const item = (roof && roof.face) || viewer.scene.measurements.concat(viewer.scene.profiles).find(m => m.spheres.some(s => hovered.indexOf(s) !== -1)) || viewer.scene.volumes.find(v => hovered.indexOf(v) !== -1) || this.pointOfViewAt(evt);
     if (item) this.setState({panel: "project", inserted: null, focused: {item}});
   }
 

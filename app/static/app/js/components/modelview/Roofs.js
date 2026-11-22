@@ -14,6 +14,7 @@ class Roofs{
     this.shift = false;
     this.pressed = null;
     this.finish = false;
+    this.picked = null;
 
     viewer.addEventListener("update", this.update);
     window.addEventListener("keydown", this.handleKeys, true);
@@ -44,10 +45,29 @@ class Roofs{
     this.shift = false;
   }
 
+  pick(current){
+    const hovered = this.viewer.inputHandler.hoveredElements;
+    const top = hovered.length && hovered[0].object;
+    if (!top || !top.parent || top.parent.kind !== "roof" || top.parent.spheres.indexOf(top) === -1) return null;
+    const at = key(top.position);
+    const spheres = hovered.map(h => h.object).filter(o => o.parent && o.parent.kind === "roof" && o.parent.spheres.indexOf(o) !== -1 && key(o.position) === at);
+    const faces = this.viewer.scene.measurements.filter(m => spheres.some(o => o.parent === m));
+    const face = faces[(faces.indexOf(current) + 1) % faces.length];
+    return {face, sphere: spheres.find(o => o.parent === face)};
+  }
+
   handleMouseDown = (e) => {
     this.handleKeys(e);
     const viewer = this.viewer;
     const input = viewer.inputHandler;
+    if (!e.shiftKey && e.button === 0 && !input.drag && !input.paused){
+      const pick = this.pick(this.picked);
+      if (!pick) return;
+      this.picked = pick.face;
+      const i = input.hoveredElements.findIndex(h => h.object === pick.sphere);
+      input.hoveredElements.unshift(...input.hoveredElements.splice(i, 1));
+      return;
+    }
     if (!e.shiftKey || e.button !== 0 || input.drag || input.paused) return;
 
     const hit = input.hoveredElements.map(h => h.object).find(o => o.parent && o.parent.kind === "roof" && o.parent.spheres.indexOf(o) !== -1);
@@ -258,6 +278,10 @@ class Roofs{
 
     for (const face of faces){
       if (face.open && !(held && held.face === face) && !(viewer.inputHandler.paused && viewer.inputHandler.paused.parent === face)){
+        if (face.points.length < 3){
+          viewer.scene.removeMeasurement(face);
+          continue;
+        }
         face.open = false;
         face.showDistances = true;
         face.showArea = true;

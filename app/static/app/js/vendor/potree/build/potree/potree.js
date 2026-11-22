@@ -54245,10 +54245,10 @@
 					let coordinateLabel = this.coordinateLabels[0];
 					
 					let positions = position.toArray();
-					let msg = `${Utils.addCommas(positions[0].toFixed(3))} / ${Utils.addCommas(positions[1].toFixed(3))} / ${Utils.addCommas((positions[2] / window.viewer.lengthUnit.unitspermeter * window.viewer.lengthUnitDisplay.unitspermeter).toFixed(3))}`;
+					let msg = `${positions[0].toFixed(3)} / ${positions[1].toFixed(3)} / ${(positions[2] / window.viewer.lengthUnit.unitspermeter * window.viewer.lengthUnitDisplay.unitspermeter).toFixed(3)}`;
 					if(this.display === 'latlon'){
 						msg = this.latlon && this.latlon.x === positions[0] && this.latlon.y === positions[1]
-							? `${this.latlon.lon.toFixed(9)} / ${this.latlon.lat.toFixed(9)} / ${Utils.addCommas((positions[2] / window.viewer.lengthUnit.unitspermeter * window.viewer.lengthUnitDisplay.unitspermeter).toFixed(3))}`
+							? `${this.latlon.lon.toFixed(9)} / ${this.latlon.lat.toFixed(9)} / ${(positions[2] / window.viewer.lengthUnit.unitspermeter * window.viewer.lengthUnitDisplay.unitspermeter).toFixed(3)}`
 							: '...';
 					}
 					coordinateLabel.setText(msg);

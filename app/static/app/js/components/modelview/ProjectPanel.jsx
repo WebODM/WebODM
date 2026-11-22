@@ -308,7 +308,7 @@ class ProjectPanel extends React.Component{
       if (m.showCircle && points.length === 3){
         const center = Potree.Utils.computeCircleCenter(points[0], points[1], points[2]);
         const radius = center.distanceTo(points[0]);
-        properties.push([_("Center"), `${this.fmt(center.x)}, ${this.fmt(center.y)}, ${this.fmt(center.z * conv)}`]);
+        properties.push([_("Center"), `${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${(center.z * conv).toFixed(3)}`]);
         properties.push([_("Radius"), `${this.fmt(radius * conv)} ${unit}`]);
         properties.push([_("Circumference"), `${this.fmt(2 * Math.PI * radius * conv)} ${unit}`]);
       }

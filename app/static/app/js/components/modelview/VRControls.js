@@ -5,7 +5,7 @@ import { systems, getUnitSystem, setUnitSystem } from '../../classes/Units';
 const SLIDE_SPEED = 3;
 const COMFORT_ASSIST = 0.5;
 const RAY_GRAVITY = -0.1 / 2.25;
-const SNAP_ANGLE = Math.PI / 4;
+const SNAP_ANGLE = Math.PI / 6;
 const THRESHOLD = 0.8;
 const MAX_DROP = 5;
 const JUMP_HEIGHT = 1.5;
@@ -27,6 +27,7 @@ const TABLE_RADIUS = 0.75;
 
 const WATCH_POSITION = new THREE.Vector3(-0.04, -0.015, 0.18);
 const WATCH_FACE = new THREE.Vector3(-1, 0, 0);
+const TRAY_POSITION = new THREE.Vector3(0.045, 0, 0.08);
 const PALETTE_WIDTH = 0.18;
 const MARGIN = 0.006;
 const TITLE = 0.018;
@@ -60,8 +61,10 @@ const canvasTexture = (width, height) => {
 };
 
 class VRControls{
-  constructor(viewer, {modelTypes, getModelType, setModelType, getLoading}){
+  constructor(viewer, {modelTypes, getModelType, setModelType, getLoading, undo, redo}){
     this.viewer = viewer;
+    this.undo = undo;
+    this.redo = redo;
     this.getModelType = getModelType;
     this.setModelType = setModelType;
     this.getLoading = getLoading;
@@ -84,13 +87,14 @@ class VRControls{
     this.rigInverse = new THREE.Matrix4();
     this.rigQuaternion = new THREE.Quaternion();
     this.hands = {};
-    this.previous = {turn: 0, teleport: false, jump: false, toggle: false, trigger: false, leftTrigger: false};
+    this.previous = {turn: 0, teleport: false, jump: false, toggle: false, undo: false, redo: false, trigger: false, leftTrigger: false};
     this.measureMode = "measure";
     this.drag = null;
     this.editHand = "right";
     this.hover = null;
     this.hits = new Set();
     this.editing = new Set();
+    this.deleting = false;
     this.hit = null;
     this.pinch = null;
     this.grab = null;
@@ -98,14 +102,15 @@ class VRControls{
     this.recenter = false;
     this.recenterStart = 0;
     this.recenterRetry = 0;
-    this.lastTipZ = 1;
     this.labeled = new Set();
     this.markerPosition = new THREE.Vector3();
     this.markerQuaternion = new THREE.Quaternion();
     this.markerTarget = new THREE.Object3D();
     this.rayPoints = Array.from({length: 10}, () => new THREE.Vector3());
     this.linePoints = Array.from({length: 20}, () => new THREE.Vector3());
-    this.paletteVisible = false;
+    this.panels = [];
+    this.buttons = [];
+    this.tooltipButton = null;
 
     const light = new THREE.PointLight(0xffffff, 5, 0, 1);
     light.position.set(0, 2, 0);
@@ -120,11 +125,11 @@ class VRControls{
       viewer.sceneVR.add(ray, grip);
       ray.addEventListener("connected", e => {
         this.hands[e.data.handedness] = {ray, grip, source: e.data};
-        if (e.data.handedness === "left") ray.add(this.watch, this.palette);
+        if (e.data.handedness === "left") ray.add(this.watch, this.palette, this.tray);
       });
       ray.addEventListener("disconnected", () => {
         for (const k in this.hands) if (this.hands[k].ray === ray) delete this.hands[k];
-        ray.remove(this.watch, this.palette);
+        ray.remove(this.watch, this.palette, this.tray);
       });
     }
 
@@ -160,6 +165,8 @@ class VRControls{
     this.pinGeometry = new THREE.ConeGeometry(0.5, 1, 4).rotateX(Math.PI).translate(0, 0.5, 0);
     this.pinMaterial = new THREE.MeshBasicMaterial({color: 0xff2222, transparent: true, opacity: 0.6, depthWrite: false});
     this.pinHoverMaterial = new THREE.MeshBasicMaterial({color: 0xff2222});
+    this.dots = new THREE.Group();
+    this.dotGeometry = new THREE.SphereGeometry(0.5, 16, 12);
 
     this.marker = new THREE.Mesh(new THREE.RingGeometry(0.12, 0.15).translate(0, 0, 0.02), new THREE.MeshBasicMaterial());
     this.marker.visible = false;
@@ -204,54 +211,105 @@ class VRControls{
     this.watch.add(watchCase, face);
     this.clockTime = "";
 
-    const rows = [[_("Mode"), [["mode", "walk", _("Walk")], ["mode", "tabletop", _("Tabletop")]]]];
-    if (modelTypes.length > 1) rows.push([_("Model"), modelTypes.map(t => ["model", t.type, t.label])]);
-    rows.push([_("Units"), Object.keys(systems).map(k => ["units", k, systems[k].getName()])]);
-    this.paletteHeight = MARGIN + rows.length * (TITLE + ROW + MARGIN);
     const sides = [0x3a3a3a, 0x3a3a3a, 0x4a4a4a, 0x252525];
-    const titleTexture = canvasTexture(512, Math.round(512 * this.paletteHeight / PALETTE_WIDTH));
-    const base = new THREE.Mesh(new THREE.BoxGeometry(PALETTE_WIDTH, this.paletteHeight, 0.004).translate(0, 0, -0.002), [
-      ...sides.map(color => new THREE.MeshBasicMaterial({color})),
-      new THREE.MeshBasicMaterial({map: titleTexture}),
-      new THREE.MeshBasicMaterial({color: 0x222222})
-    ]);
-    this.palette = new THREE.Group();
-    this.palette.add(base);
-    this.palette.position.copy(WATCH_POSITION).addScaledVector(WATCH_FACE, 0.07);
-    this.palette.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, -1, 0), new THREE.Vector3(-1, 0, 0)));
-    this.palette.updateMatrix();
-    this.palette.visible = false;
+    const panel = (rows, position, basis) => {
+      const height = MARGIN + rows.reduce((total, row) => total + (row.title ? TITLE : 0) + row.height + MARGIN, 0);
+      const titleTexture = canvasTexture(512, Math.round(512 * height / PALETTE_WIDTH));
+      const base = new THREE.Mesh(new THREE.BoxGeometry(PALETTE_WIDTH, height, 0.004).translate(0, 0, -0.002), [
+        ...sides.map(color => new THREE.MeshBasicMaterial({color})),
+        new THREE.MeshBasicMaterial({map: titleTexture}),
+        new THREE.MeshBasicMaterial({color: 0x222222})
+      ]);
+      const group = new THREE.Group();
+      group.add(base);
+      group.position.copy(position);
+      group.quaternion.setFromRotationMatrix(basis);
+      group.updateMatrix();
+      group.visible = false;
+      const result = {group, height, buttons: [], visible: false, tip: null, lastTipZ: 1};
+      const c = titleTexture.image.getContext("2d");
+      const px = 512 / PALETTE_WIDTH;
+      c.fillStyle = "#222222";
+      c.fillRect(0, 0, titleTexture.image.width, titleTexture.image.height);
+      c.fillStyle = "#ffffff";
+      c.font = "bold 36px sans-serif";
+      c.textAlign = "left";
+      c.textBaseline = "middle";
+      let top = height / 2 - MARGIN;
+      for (const row of rows){
+        if (row.title){
+          c.fillText(row.title, MARGIN * px, (height / 2 - top + TITLE / 2) * px);
+          top -= TITLE;
+        }
+        const w = row.width || (PALETTE_WIDTH - MARGIN * (row.items.length + 1)) / row.items.length;
+        row.items.forEach((item, i) => {
+          const x = -(row.items.length * w + (row.items.length - 1) * MARGIN) / 2 + w / 2 + i * (w + MARGIN);
+          const y = top - row.height / 2;
+          const texture = canvasTexture(256, Math.round(256 * row.height / w));
+          const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, row.height, EXTRUDE).translate(0, 0, EXTRUDE / 2), [
+            ...sides.map(color => new THREE.MeshBasicMaterial({color})),
+            new THREE.MeshBasicMaterial({map: texture}),
+            new THREE.MeshBasicMaterial({color: 0x222222})
+          ]);
+          mesh.position.set(x, y, 0);
+          group.add(mesh);
+          const button = {...item, panel: result, x, y, w, h: row.height, mesh, texture, press: 0, engaged: false, armed: true, state: ""};
+          result.buttons.push(button);
+          this.buttons.push(button);
+        });
+        top -= row.height + MARGIN;
+      }
+      titleTexture.needsUpdate = true;
+      this.panels.push(result);
+      return result;
+    };
 
-    const c = titleTexture.image.getContext("2d");
-    const px = 512 / PALETTE_WIDTH;
-    c.fillStyle = "#222222";
-    c.fillRect(0, 0, titleTexture.image.width, titleTexture.image.height);
-    c.fillStyle = "#ffffff";
-    c.font = "bold 36px sans-serif";
-    c.textAlign = "left";
-    c.textBaseline = "middle";
-    this.buttons = [];
-    rows.forEach(([title, items], r) => {
-      const top = this.paletteHeight / 2 - MARGIN - r * (TITLE + ROW + MARGIN);
-      c.fillText(title, MARGIN * px, (this.paletteHeight / 2 - top + TITLE / 2) * px);
-      const w = (PALETTE_WIDTH - MARGIN * (items.length + 1)) / items.length;
-      items.forEach(([group, key, label], i) => {
-        const x = -PALETTE_WIDTH / 2 + MARGIN + w / 2 + i * (w + MARGIN);
-        const y = top - TITLE - ROW / 2;
-        const texture = canvasTexture(256, Math.round(256 * ROW / w));
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, ROW, EXTRUDE).translate(0, 0, EXTRUDE / 2), [
-          ...sides.map(color => new THREE.MeshBasicMaterial({color})),
-          new THREE.MeshBasicMaterial({map: texture}),
-          new THREE.MeshBasicMaterial({color: 0x222222})
-        ]);
-        mesh.position.set(x, y, 0);
-        this.palette.add(mesh);
-        this.buttons.push({group, key, label, x, y, w, h: ROW, mesh, texture, press: 0, engaged: false, armed: true, state: ""});
-      });
-    });
-    titleTexture.needsUpdate = true;
+    const paletteRows = [{title: _("Mode"), height: ROW, items: [{group: "mode", key: "walk", label: _("Walk")}, {group: "mode", key: "tabletop", label: _("Tabletop")}]}];
+    if (modelTypes.length > 1) paletteRows.push({title: _("Model"), height: ROW, items: modelTypes.map(t => ({group: "model", key: t.type, label: t.label}))});
+    paletteRows.push({title: _("Units"), height: ROW, items: Object.keys(systems).map(k => ({group: "units", key: k, label: systems[k].getName()}))});
+    this.palettePanel = panel(paletteRows, WATCH_POSITION.clone().addScaledVector(WATCH_FACE, 0.07), new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, -1, 0), new THREE.Vector3(-1, 0, 0)));
+    this.palette = this.palettePanel.group;
 
-    viewer.sceneVR.add(this.headGroup, this.marker, this.line, this.pointer, this.laser, this.dragLine, this.pins);
+    const tools = [
+      {icon: "mv-icon mv-icon-point", label: _("Point"), args: {showDistances: false, showAngles: false, showCoordinates: true, showArea: false, closed: true, maxMarkers: 1, name: _("Point")}},
+      {icon: "mv-icon mv-icon-distance", label: _("Distance"), args: {showDistances: true, showArea: false, closed: false, name: _("Distance")}},
+      {icon: "mv-icon mv-icon-height", label: _("Height"), args: {showDistances: false, showHeight: true, showArea: false, closed: false, maxMarkers: 2, name: _("Height")}},
+      {icon: "mv-icon mv-icon-angle", label: _("Angle"), args: {showDistances: false, showAngles: true, showArea: false, closed: true, maxMarkers: 3, name: _("Angle")}},
+      {icon: "mv-icon mv-icon-circle", label: _("Circle"), args: {showDistances: false, showHeight: false, showArea: false, showCircle: true, showEdges: false, closed: false, maxMarkers: 3, name: _("Circle")}},
+      {icon: "mv-icon mv-icon-roof", label: _("Roof Plane"), kind: "roof", args: {showDistances: false, showArea: false, closed: true, name: _("Roof Plane")}},
+      {icon: "mv-icon mv-icon-perpendicular", label: _("Perpendicular distance"), kind: "perpendicular", args: {showDistances: false, showArea: false, closed: false, maxMarkers: 2, name: _("Perpendicular distance")}},
+      {icon: "mv-icon mv-icon-area", label: _("Surface area"), args: {showDistances: true, showArea: true, closed: true, name: _("Area")}},
+      {icon: "mv-icon mv-icon-azimuth", label: _("Azimuth"), args: {showDistances: false, showHeight: false, showArea: false, showCircle: false, showEdges: false, showAzimuth: true, closed: false, maxMarkers: 2, name: _("Azimuth")}}
+    ].map((tool, i) => ({...tool, group: "tool", key: i}));
+    const cell = (PALETTE_WIDTH - MARGIN * 4) / 3;
+    const rows = [0, 3, 6].map((start, r) => ({title: r === 0 ? _("Measurements") : null, height: cell, items: tools.slice(start, start + 3)}));
+    rows.push({title: null, height: cell, width: cell, items: [{group: "delete", key: "delete", label: _("Delete"), glyph: "fa fa-trash"}]});
+    this.trayPanel = panel(rows, TRAY_POSITION, new THREE.Matrix4().makeBasis(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(1, 0, 0)));
+    this.tray = this.trayPanel.group;
+    for (const button of this.trayPanel.buttons){
+      const span = document.createElement("i");
+      span.className = button.icon || button.glyph;
+      document.body.appendChild(span);
+      const style = getComputedStyle(span);
+      const before = getComputedStyle(span, "::before");
+      const match = /url\("?(.*?)"?\)/.exec(style.maskImage || style.webkitMaskImage || "");
+      if (button.glyph) button.glyph = {text: before.content.replace(/["']/g, ""), weight: before.fontWeight, family: before.fontFamily};
+      span.remove();
+      if (!match) continue;
+      const image = new Image();
+      image.onload = () => {
+        button.image = image;
+        button.state = "";
+      };
+      image.src = match[1];
+    }
+    this.tooltipTexture = canvasTexture(512, 80);
+    this.tooltip = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.0172), new THREE.MeshBasicMaterial({map: this.tooltipTexture, transparent: true, depthTest: false}));
+    this.tooltip.renderOrder = 1003;
+    this.tooltip.visible = false;
+    this.tray.add(this.tooltip);
+
+    viewer.sceneVR.add(this.headGroup, this.marker, this.line, this.pointer, this.laser, this.dragLine, this.pins, this.dots);
     viewer.addEventListener("vr_start", this.start);
     viewer.addEventListener("vr_end", () => {
       if (this.pointBudget !== null) viewer.setPointBudget(this.pointBudget);
@@ -268,6 +326,7 @@ class VRControls{
     this.hover = null;
     this.hits = new Set();
     this.editing = new Set();
+    this.deleting = false;
     viewer.setPointBudget(Math.min(this.pointBudget, 2000000));
     const view = viewer.scene.view;
     const direction = view.direction;
@@ -443,8 +502,24 @@ class VRControls{
     const move = stick(pad(left));
     const turn = stick(pad(right));
     const jump = pressed(pad(right), 4);
-    const toggle = pressed(pad(right), 5) || pressed(pad(left), 5);
-    if (toggle && !this.previous.toggle) this.measureMode = this.measureMode === "measure" ? "off" : "measure";
+    const toggle = pressed(pad(right), 5);
+    const undo = pressed(pad(left), 5), redo = pressed(pad(left), 4);
+    const creating = !!this.drag && !!this.drag.creating;
+    const busy = creating || this.deleting;
+    if (busy && ((undo && !this.previous.undo) || (redo && !this.previous.redo) || (toggle && !this.previous.toggle) || (jump && !this.previous.jump))){
+      if (creating){
+        const measurement = this.drag.measurement;
+        if (measurement.maxMarkers > 3) measurement.removeMarker(measurement.points.length - 1);
+        if (!measurement.points.length) viewer.scene.removeMeasurement(measurement);
+        this.drag = null;
+      }
+      this.deleting = false;
+    }
+    if (!busy && undo && !this.previous.undo) this.undo();
+    if (!busy && redo && !this.previous.redo) this.redo();
+    this.previous.undo = undo;
+    this.previous.redo = redo;
+    if (!busy && toggle && !this.previous.toggle) this.measureMode = this.measureMode === "measure" ? "off" : "measure";
     this.previous.toggle = toggle;
     const trigger = pressed(pad(right), 0);
     const pinching = this.mode === "tabletop" && !!left && !!right &&(trigger || pressed(pad(right), 1)) && (pressed(pad(left), 0) || pressed(pad(left), 1));
@@ -543,7 +618,7 @@ class VRControls{
       forward.y = 0;
       if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
       forward.normalize();
-      const table = headPosition.clone().addScaledVector(forward, 0.5 + TABLE_RADIUS);
+      const table = headPosition.clone().addScaledVector(forward, 0.2 + TABLE_RADIUS);
       table.y -= 0.5;
       this.position.set(0, 0, 0);
       this.updateRig();
@@ -584,38 +659,39 @@ class VRControls{
 
     let pointerBusy = false;
     let hover = null;
+    let rayHover = null;
     let rayPress = null;
-    let toPalette = null;
-    if (left){
-      const watchPosition = WATCH_POSITION.clone().applyMatrix4(left.ray.matrix);
-      const faceNormal = WATCH_FACE.clone().applyQuaternion(left.ray.quaternion);
-      const facing = faceNormal.dot(headPosition.clone().sub(watchPosition).normalize());
-      if (!this.paletteVisible && facing > 0.7) this.paletteVisible = true;
-      else if (this.paletteVisible && facing < 0.5 && !this.buttons.some(b => b.engaged)) this.paletteVisible = false;
-      if (this.paletteVisible) toPalette = left.ray.matrix.clone().multiply(this.palette.matrix).invert();
-    }else this.paletteVisible = false;
-    this.palette.visible = this.paletteVisible;
-
+    const palm = left && new THREE.Vector3(1, 0, 0).applyQuaternion(left.ray.quaternion);
+    const panelFacing = [
+      left && WATCH_FACE.clone().applyQuaternion(left.ray.quaternion).dot(headPosition.clone().sub(WATCH_POSITION.clone().applyMatrix4(left.ray.matrix)).normalize()),
+      left && Math.max(palm.y, palm.dot(headPosition.clone().sub(TRAY_POSITION.clone().applyMatrix4(left.ray.matrix)).normalize()))
+    ];
     this.pointer.visible = false;
-    let tip = null;
-    if (toPalette && right){
-      tip = right.ray.position.clone().applyMatrix4(toPalette);
-      const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(right.ray.quaternion).transformDirection(toPalette);
-      const t = direction.z < 0 ? (EXTRUDE - tip.z) / direction.z : -1;
-      const at = tip.clone().addScaledVector(direction, t);
-      if (t > 0 && t < 1 && Math.abs(at.x) <= PALETTE_WIDTH / 2 && Math.abs(at.y) <= this.paletteHeight / 2){
+    let pointerT = Infinity;
+    this.panels.forEach((panel, i) => {
+      if (!left) panel.visible = false;
+      else if (!panel.visible && panelFacing[i] > 0.7) panel.visible = true;
+      else if (panel.visible && panelFacing[i] < 0.5 && !panel.buttons.some(b => b.engaged)) panel.visible = false;
+      panel.group.visible = panel.visible;
+      panel.tip = null;
+      if (!panel.visible || !right) return;
+      const toPanel = left.ray.matrix.clone().multiply(panel.group.matrix).invert();
+      panel.tip = right.ray.position.clone().applyMatrix4(toPanel);
+      const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(right.ray.quaternion).transformDirection(toPanel);
+      const t = direction.z < 0 ? (EXTRUDE - panel.tip.z) / direction.z : -1;
+      const at = panel.tip.clone().addScaledVector(direction, t);
+      if (t > 0 && t < 1 && t < pointerT && Math.abs(at.x) <= PALETTE_WIDTH / 2 && Math.abs(at.y) <= panel.height / 2){
+        pointerT = t;
         pointerBusy = true;
-        const button = this.buttons.find(b => Math.abs(at.x - b.x) <= b.w / 2 && Math.abs(at.y - b.y) <= b.h / 2);
-        if (button){
-          hover = button;
-          if (trigger && !pinching) rayPress = button;
-        }
+        const button = panel.buttons.find(b => Math.abs(at.x - b.x) <= b.w / 2 && Math.abs(at.y - b.y) <= b.h / 2);
+        hover = rayHover = button || null;
+        rayPress = button && trigger && !pinching ? button : null;
         this.pointer.position.copy(right.ray.position);
         this.pointer.quaternion.copy(right.ray.quaternion);
         this.pointer.scale.set(1, 1, t);
         this.pointer.visible = true;
       }
-    }
+    });
 
     const leftTrigger = pressed(pad(left), 0);
     const leftEdge = leftTrigger && !this.previous.leftTrigger, rightEdge = trigger && !this.previous.trigger && !pointerBusy;
@@ -633,7 +709,8 @@ class VRControls{
     };
     const measurements = [...viewer.scene.measurements, ...viewer.scene.profiles];
     for (const measurement of this.editing) if (!measuring || !measurement.visible || !measurements.includes(measurement)) this.editing.delete(measurement);
-    if (this.drag && (this.drag.hand !== laserHand || !holding || !this.editing.has(this.drag.measurement))){
+    if (this.drag && this.drag.creating && !this.editing.has(this.drag.measurement)) this.drag = null;
+    if (this.drag && !this.drag.creating && (this.drag.hand !== laserHand || !holding || !this.editing.has(this.drag.measurement))){
       this.drag.measurement.dispatchEvent({type: "marker_dropped", [this.drag.measurement instanceof Potree.Profile ? "profile" : "measurement"]: this.drag.measurement, index: this.drag.index});
       buzz(this.drag.hand);
       this.drag = null;
@@ -642,13 +719,17 @@ class VRControls{
     const origin = laserHand && laserHand.ray.position.clone().applyMatrix4(this.rig);
     const direction = laserHand && new THREE.Vector3(0, 0, -1).applyQuaternion(laserHand.ray.quaternion).applyQuaternion(this.rigQuaternion);
     const forward = laserHand && new THREE.Vector3(0, 0, -1).applyQuaternion(laserHand.ray.quaternion);
-    if (this.drag){
-      const turn = Math.atan2(-forward.x, -forward.z) - this.drag.handYaw;
-      const yaw = this.drag.yaw + Math.atan2(Math.sin(turn), Math.cos(turn));
-      const pitch = Math.max(-1.55, Math.min(1.55, this.drag.pitch + (tabletop ? 2 : 1) * (Math.asin(forward.y) - this.drag.handPitch)));
-      if (Math.abs(pitch - this.drag.pitch) + Math.abs(yaw - this.drag.yaw) > 0.003) this.drag.moved = true;
-      if (this.drag.moved){
-        const ray = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)).applyQuaternion(this.rigQuaternion);
+    if (this.drag && laserHand){
+      let ray = null;
+      if (this.drag.creating) ray = direction;
+      else{
+        const turn = Math.atan2(-forward.x, -forward.z) - this.drag.handYaw;
+        const yaw = this.drag.yaw + Math.atan2(Math.sin(turn), Math.cos(turn));
+        const pitch = Math.max(-1.55, Math.min(1.55, this.drag.pitch + (tabletop ? 2 : 1) * (Math.asin(forward.y) - this.drag.handPitch)));
+        if (Math.abs(pitch - this.drag.pitch) + Math.abs(yaw - this.drag.yaw) > 0.003) this.drag.moved = true;
+        if (this.drag.moved) ray = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)).applyQuaternion(this.rigQuaternion);
+      }
+      if (ray){
         let hit = null;
         for (const thick of [0, 0.25]) for (let i = 0; i < 100 && !hit; i++) hit = this.raycast(origin.clone().addScaledVector(ray, i * 2 * s), origin.clone().addScaledVector(ray, (i + 1) * 2 * s), thick);
         const point = this.drag.measurement.points[this.drag.index];
@@ -659,6 +740,7 @@ class VRControls{
     }
 
     const hits = new Set();
+    let first = null;
     if (laserHand && !this.drag){
       for (const measurement of measurements){
         if (!measurement.visible) continue;
@@ -674,6 +756,7 @@ class VRControls{
           const t = Math.max(0, closest.dot(direction));
           if (closest.distanceTo(direction.clone().multiplyScalar(t)) < Math.max(0.03 * s, t * 0.026)){
             hits.add(measurement);
+            if (t < nearest) first = measurement;
             nearest = Math.min(nearest, t);
           }
         }
@@ -711,13 +794,41 @@ class VRControls{
       });
     }
     for (let i = pins; i < this.pins.children.length; i++) this.pins.children[i].visible = false;
+    let dots = 0;
+    if (measuring){
+      for (const measurement of viewer.scene.measurements){
+        if (!measurement.visible || !measurement.showCoordinates || measurement.points.length !== 1) continue;
+        if (dots === this.dots.children.length) this.dots.add(new THREE.Mesh(this.dotGeometry, this.pinHoverMaterial));
+        const dot = this.dots.children[dots++];
+        dot.position.copy(measurement.points[0].position).applyMatrix4(this.rigInverse);
+        dot.scale.setScalar(w);
+        dot.visible = true;
+      }
+    }
+    for (let i = dots; i < this.dots.children.length; i++) this.dots.children[i].visible = false;
     if (highlight) highlight.material = this.pinHoverMaterial;
     if (pinHover) nearest = Math.min(nearest, pinNearest * s);
 
     if ((pinHover && (!this.hover || this.hover.measurement !== pinHover.measurement || this.hover.index !== pinHover.index)) || [...hits].some(m => !this.hits.has(m))) buzz(laserHand);
     this.hover = pinHover;
     this.hits = hits;
-    if (edge){
+    if (edge && this.drag && this.drag.creating){
+      const measurement = this.drag.measurement;
+      if (measurement.points.length >= measurement.maxMarkers) this.drag = null;
+      else{
+        measurement.addMarker(measurement.points[measurement.points.length - 1].position.clone());
+        this.drag.index = measurement.points.length - 1;
+      }
+      buzz(laserHand);
+    }else if (edge && this.deleting){
+      if (first){
+        if (first instanceof Potree.Profile) viewer.scene.removeProfile(first);
+        else viewer.scene.removeMeasurement(first);
+        this.editing.delete(first);
+        hits.delete(first);
+        buzz(laserHand);
+      }
+    }else if (edge){
       if (pinHover){
         const point = pinHover.measurement.points[pinHover.index];
         const aim = (point.position || point).clone().applyMatrix4(this.rigInverse).sub(laserHand.ray.position).normalize();
@@ -746,42 +857,75 @@ class VRControls{
 
     let activated = null;
     let touched = null;
-    if (tip){
-      let closest = Infinity;
-      for (const button of this.buttons){
-        const d = Math.hypot(Math.max(0, Math.abs(tip.x - button.x) - button.w / 2), Math.max(0, Math.abs(tip.y - button.y) - button.h / 2));
-        if (d <= HIT_MARGIN && d < closest){
-          closest = d;
-          touched = button;
-        }
+    let closest = Infinity;
+    for (const button of this.buttons){
+      const tip = button.panel.tip;
+      if (!tip) continue;
+      const d = Math.hypot(Math.max(0, Math.abs(tip.x - button.x) - button.w / 2), Math.max(0, Math.abs(tip.y - button.y) - button.h / 2));
+      if (d <= HIT_MARGIN && d < closest){
+        closest = d;
+        touched = button;
       }
     }
     const top = EXTRUDE + POKE_RADIUS;
     for (const button of this.buttons){
-      if (button === touched && this.lastTipZ > top - 0.002 && tip.z < top + 0.04) button.engaged = true;
+      const tip = button.panel.tip;
+      const toggled = button.group === "delete" && this.deleting;
+      const rest = toggled ? EXTRUDE * 2 / 3 : 0, depth = toggled ? EXTRUDE * 0.95 : TRAVEL;
+      if (button === touched && button.panel.lastTipZ > top - 0.002 && tip.z < top + 0.04) button.engaged = true;
       if (button !== touched || tip.z < -0.04 || tip.z > top + 0.04) button.engaged = false;
       if (button.engaged){
-        button.press = Math.min(TRAVEL, Math.max(0, top - tip.z));
+        button.press = Math.min(depth, Math.max(rest, top - tip.z));
         hover = button;
       }else{
-        const target = rayPress === button ? TRAVEL : 0;
+        const target = rayPress === button ? depth : rest;
         button.press = target > button.press ? Math.min(target, button.press + delta * 0.15) : Math.max(target, button.press - delta * 0.15);
       }
-      if (button.press >= TRAVEL * 0.9 && button.armed){
+      if (button.press >= rest + (depth - rest) * 0.9 && button.armed){
         button.armed = false;
         activated = button;
         buzz(right);
-      }else if (button.press < TRAVEL * 0.3) button.armed = true;
+      }else if (button.press < rest + (depth - rest) * 0.3) button.armed = true;
       button.mesh.scale.z = (EXTRUDE - button.press) / EXTRUDE;
     }
+    for (const panel of this.panels) panel.lastTipZ = panel.tip ? panel.tip.z : 1;
 
-    this.lastTipZ = tip ? tip.z : 1;
-
-    if (activated && activated.group === "model"){
+    if (activated && (activated.group === "tool" || activated.group === "delete") && this.drag && this.drag.creating){
+      const measurement = this.drag.measurement;
+      if (measurement.maxMarkers > 3) measurement.removeMarker(measurement.points.length - 1);
+      if (!measurement.points.length) viewer.scene.removeMeasurement(measurement);
+      this.drag = null;
+    }
+    if (activated && activated.group === "delete"){
+      this.deleting = !this.deleting;
+      this.measureMode = "measure";
+    }else if (activated && activated.group === "tool"){
+      this.deleting = false;
+      const args = activated.args;
+      const measurement = new Potree.Measure();
+      measurement.showDistances = args.showDistances === null ? true : args.showDistances;
+      measurement.showArea = !!args.showArea;
+      measurement.showAngles = !!args.showAngles;
+      measurement.showCoordinates = !!args.showCoordinates;
+      measurement.showHeight = !!args.showHeight;
+      measurement.showCircle = !!args.showCircle;
+      measurement.showAzimuth = !!args.showAzimuth;
+      measurement.showEdges = args.showEdges !== false;
+      measurement.closed = !!args.closed;
+      measurement.maxMarkers = args.maxMarkers || Infinity;
+      measurement.name = args.name;
+      if (activated.kind) measurement.kind = activated.kind;
+      if (activated.kind === "roof") measurement.open = true;
+      measurement.addMarker(this.position.clone());
+      viewer.scene.addMeasurement(measurement);
+      this.measureMode = "measure";
+      this.editing.add(measurement);
+      this.drag = {hand: this.hands[this.editHand] || right, measurement, index: 0, creating: activated};
+    }else if (activated && activated.group === "model"){
       this.setModelType(activated.key);
     }else if (activated && activated.group === "units"){
       setUnitSystem(activated.key);
-    }else if (activated && activated.key !== this.mode){
+    }else if (activated && activated.group === "mode" && activated.key !== this.mode){
       this.mode = activated.key;
       this.scale = 1;
       this.velocity.set(0, 0, 0);
@@ -796,31 +940,71 @@ class VRControls{
     const modelType = this.getModelType();
     const units = getUnitSystem();
     for (const button of this.buttons){
-      const active = button.group === "mode" ? button.key === this.mode : button.group === "units" ? button.key === units : button.key === modelType;
+      const active = button.group === "tool" ? !!this.drag && this.drag.creating === button : button.group === "delete" ? this.deleting : button.group === "mode" ? button.key === this.mode : button.group === "units" ? button.key === units : button.key === modelType;
       const state = `${active}|${button === hover}`;
       if (state === button.state) continue;
       button.state = state;
       const canvas = button.texture.image;
       const c = canvas.getContext("2d");
-      c.fillStyle = active ? "#3498db" : "#555555";
+      c.fillStyle = button.group === "delete" ? (active ? "#e74c3c" : "#922b21") : active ? "#3498db" : "#555555";
       c.fillRect(0, 0, canvas.width, canvas.height);
       if (button === hover){
         c.strokeStyle = "#ffffff";
         c.lineWidth = 10;
         c.strokeRect(5, 5, canvas.width - 10, canvas.height - 10);
       }
-      let size = Math.round(canvas.height * 0.4);
-      c.font = `bold ${size}px sans-serif`;
-      while (size > 12 && c.measureText(button.label).width > canvas.width - 24){
-        size -= 2;
+      if (button.icon){
+        if (button.image){
+          const size = Math.round(Math.min(canvas.width, canvas.height) * 0.6);
+          const icon = document.createElement("canvas");
+          icon.width = icon.height = size;
+          const ic = icon.getContext("2d");
+          ic.drawImage(button.image, 0, 0, size, size);
+          ic.globalCompositeOperation = "source-in";
+          ic.fillStyle = "#ffffff";
+          ic.fillRect(0, 0, size, size);
+          c.drawImage(icon, (canvas.width - size) / 2, (canvas.height - size) / 2);
+        }
+      }else if (button.glyph){
+        c.font = `${button.glyph.weight} ${Math.round(canvas.height * 0.5)}px ${button.glyph.family}`;
+        c.fillStyle = "#ffffff";
+        c.textAlign = "center";
+        c.textBaseline = "middle";
+        c.fillText(button.glyph.text, canvas.width / 2, canvas.height / 2);
+      }else{
+        let size = Math.round(canvas.height * 0.4);
         c.font = `bold ${size}px sans-serif`;
+        while (size > 12 && c.measureText(button.label).width > canvas.width - 24){
+          size -= 2;
+          c.font = `bold ${size}px sans-serif`;
+        }
+        c.fillStyle = "#ffffff";
+        c.textAlign = "center";
+        c.textBaseline = "middle";
+        c.fillText(button.label, canvas.width / 2, canvas.height / 2);
       }
+      button.texture.needsUpdate = true;
+    }
+
+    const tooltip = rayHover && rayHover.panel === this.trayPanel ? rayHover : null;
+    this.tooltip.visible = !!tooltip;
+    if (tooltip && tooltip !== this.tooltipButton){
+      const c = this.tooltipTexture.image.getContext("2d");
+      c.clearRect(0, 0, 512, 80);
+      c.font = "bold 40px sans-serif";
+      const width = Math.min(512, c.measureText(tooltip.label).width + 40);
+      c.fillStyle = "rgba(0, 0, 0, 0.8)";
+      c.beginPath();
+      c.roundRect((512 - width) / 2, 0, width, 80, 16);
+      c.fill();
       c.fillStyle = "#ffffff";
       c.textAlign = "center";
       c.textBaseline = "middle";
-      c.fillText(button.label, canvas.width / 2, canvas.height / 2);
-      button.texture.needsUpdate = true;
+      c.fillText(tooltip.label, 256, 42);
+      this.tooltipTexture.needsUpdate = true;
+      this.tooltip.position.set(tooltip.x, tooltip.y + tooltip.h / 2 + 0.012, EXTRUDE + 0.006);
     }
+    this.tooltipButton = tooltip;
 
     const date = new Date();
     const time = `${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`;
@@ -905,7 +1089,7 @@ class VRControls{
       this.marker.visible = false;
     }
 
-    if (!tabletop && jump && !this.previous.jump && this.grounded && performance.now() / 1000 - this.lastJump > JUMP_COOLDOWN){
+    if (!busy && !tabletop && jump && !this.previous.jump && this.grounded && performance.now() / 1000 - this.lastJump > JUMP_COOLDOWN){
       this.velocity.z = Math.sqrt(2 * GRAVITY * s * JUMP_HEIGHT * s);
       this.grounded = false;
       this.jumping = true;
