@@ -123,6 +123,12 @@ RUN <<EOT
     chmod +x ./nginx/letsencrypt-autogen.sh
     ./nodeodm/setup.sh
     ./nodeodm/cleanup.sh
+    # WebXR controller and hand models
+    curl -fsSL -o /tmp/webxr-input-profiles.zip https://github.com/WebODM/WebODM/releases/download/v4.0.1/webxr-input-profiles.zip
+    echo "525d91417ea654431d7acf3292d82de521f160f8cc6cdc4af8cca17696983590  /tmp/webxr-input-profiles.zip" | sha256sum -c
+    rm -rf app/static/app/js/vendor/webxr-input-profiles
+    python -m zipfile -e /tmp/webxr-input-profiles.zip app/static/app/js/vendor/webxr-input-profiles
+    rm /tmp/webxr-input-profiles.zip
     # Run webpack build, Django setup and final cleanup
     webpack --mode production
     # Django setup

@@ -87078,7 +87078,7 @@ ENDSEC
 	  }
 	}
 
-	const DEFAULT_PROFILES_PATH = 'https://cdn.jsdelivr.net/npm/@webxr-input-profiles/assets@1.0/dist/profiles';
+	const DEFAULT_PROFILES_PATH = '/static/app/js/vendor/webxr-input-profiles/profiles';
 	const DEFAULT_PROFILE = 'generic-trigger';
 
 	function XRControllerModel( ) {
@@ -87340,7 +87340,7 @@ ENDSEC
 							null,
 							() => {
 
-								throw new Error( `Asset ${controllerModel.motionController.assetUrl} missing or malformed.` );
+								console.warn( `Asset ${controllerModel.motionController.assetUrl} missing or malformed.` );
 
 							} );
 

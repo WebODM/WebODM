@@ -177,7 +177,7 @@ class Roofs{
     const faces = viewer.scene.measurements.filter(m => m.kind === "roof");
     const drag = viewer.inputHandler.drag;
     const vr = viewer.renderer.xr.isPresenting;
-    const vrDrag = vr && viewer.vrControls && viewer.vrControls.drag;
+    const vrDrag = vr && viewer.vrControls && viewer.vrControls.drag && (!viewer.vrControls.drag.direct || viewer.vrControls.drag.held) ? viewer.vrControls.drag : null;
     const held = vrDrag ? (vrDrag.measurement.kind === "roof" ? {face: vrDrag.measurement, index: vrDrag.index} : null) :
                  drag && drag.object && drag.object.parent && drag.object.parent.kind === "roof" ? {face: drag.object.parent, index: drag.object.parent.spheres.indexOf(drag.object)} : null;
     if (held && held.index >= 0 && (!this.dragged || this.dragged.face !== held.face || this.dragged.index !== held.index)){

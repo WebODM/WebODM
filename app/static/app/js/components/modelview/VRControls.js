@@ -1,6 +1,7 @@
 import * as THREE from 'THREE';
 import { _ } from '../../classes/gettext';
 import { systems, getUnitSystem, setUnitSystem } from '../../classes/Units';
+import HandVisual from './HandVisual';
 
 const SLIDE_SPEED = 3;
 const COMFORT_ASSIST = 0.5;
@@ -28,6 +29,7 @@ const TABLE_RADIUS = 0.75;
 const WATCH_POSITION = new THREE.Vector3(-0.04, -0.015, 0.18);
 const WATCH_FACE = new THREE.Vector3(-1, 0, 0);
 const TRAY_POSITION = new THREE.Vector3(0.045, 0, 0.08);
+const PALM_OFFSET = 0.15;
 const PALETTE_WIDTH = 0.18;
 const MARGIN = 0.006;
 const LABEL = 0.0084;
@@ -90,7 +92,11 @@ class VRControls{
     this.rigInverse = new THREE.Matrix4();
     this.rigQuaternion = new THREE.Quaternion();
     this.hands = {};
-    this.previous = {turn: 0, teleport: false, jump: false, toggle: false, undo: false, redo: false, trigger: false, leftTrigger: false};
+    this.previous = {turn: 0, teleport: false, jump: false, toggle: false, undo: false, redo: false, trigger: false, leftTrigger: false, pinch: {left: false, right: false}, pointerBusy: false};
+    this.pull = {left: false, right: false};
+    this.pullStart = {};
+    this.handVisuals = {};
+    this.handLoads = {};
     this.measureMode = "measure";
     this.drag = null;
     this.editHand = "right";
@@ -120,20 +126,27 @@ class VRControls{
     viewer.sceneVR.add(light);
 
     const xr = viewer.renderer.xr;
-    const models = new Potree.XRControllerModelFactory();
+    this.models = new Potree.XRControllerModelFactory();
+    viewer.renderer.setAnimationLoop((time, frame) => {
+      this.frame = frame;
+      viewer.loop(time);
+    });
+    this.slots = [];
     for (let i = 0; i < 2; i++){
       const ray = xr.getController(i);
       const grip = xr.getControllerGrip(i);
-      grip.add(models.createControllerModel(grip));
-      viewer.sceneVR.add(ray, grip);
-      ray.addEventListener("connected", e => {
-        this.hands[e.data.handedness] = {ray, grip, source: e.data};
-        if (e.data.handedness === "left") ray.add(this.watch, this.palette, this.tray);
+      const model = this.models.createControllerModel(grip);
+      grip.add(model);
+      const palm = new THREE.Group();
+      viewer.sceneVR.add(ray, grip, palm);
+      const slot = {ray, grip, palm, model, source: null, notified: null, hand: null};
+      grip.addEventListener("connected", e => {
+        slot.notified = e.data;
       });
-      ray.addEventListener("disconnected", () => {
-        for (const k in this.hands) if (this.hands[k].ray === ray) delete this.hands[k];
-        ray.remove(this.watch, this.palette, this.tray);
+      grip.addEventListener("disconnected", e => {
+        if (slot.notified === e.data) slot.notified = null;
       });
+      this.slots.push(slot);
     }
 
     this.vignette = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.15, 0.3, 16, 1, true), new THREE.ShaderMaterial({
@@ -329,6 +342,309 @@ class VRControls{
     viewer.addEventListener("vr_end", this.cancelCreation);
   }
 
+  syncInputs(){
+    const session = this.viewer.renderer.xr.getSession();
+    const sources = session ? session.inputSources : [];
+    const changed = this.slots.filter((slot, i) => slot.source !== (sources[i] || null));
+    for (const slot of changed) this.detach(slot);
+    this.slots.forEach((slot, i) => {
+      const source = sources[i] || null;
+      if (slot.notified !== source){
+        if (slot.notified) slot.grip.dispatchEvent({type: "disconnected", data: slot.notified});
+        if (source) slot.grip.dispatchEvent({type: "connected", data: source});
+      }
+    });
+    for (const slot of changed){
+      const source = sources[this.slots.indexOf(slot)];
+      if (source) this.attach(slot, source);
+    }
+  }
+
+  attach(slot, source){
+    const side = source.handedness;
+    const tracked = !!source.hand;
+    const anchor = tracked ? slot.palm : slot.ray;
+    slot.source = source;
+    slot.model.visible = !tracked;
+    if (side !== "left" && side !== "right") return;
+    const previous = this.slots.find(other => other !== slot && other.hand && other.hand === this.hands[side]);
+    if (previous) this.dropHand(previous);
+    slot.hand = {ray: slot.ray, grip: slot.grip, palm: slot.palm, anchor, source, tracked, poke: null, pinch: null};
+    this.hands[side] = slot.hand;
+    this.pull[side] = false;
+    this.previous.pinch[side] = false;
+    if (side === "left"){
+      anchor.add(this.watch, this.palette, this.tray);
+      const home = WATCH_POSITION.clone().addScaledVector(WATCH_FACE, 0.07);
+      const closer = new THREE.Vector3(0, 0, PALM_OFFSET).lerp(home, 0.5);
+      if (!this.paletteBase) this.paletteBase = this.palette.quaternion.clone();
+      this.palette.position.copy(tracked ? closer : home);
+      this.palette.quaternion.copy(this.paletteBase);
+      if (tracked) this.palette.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 15 * Math.PI / 180)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), 15 * Math.PI / 180));
+      this.palette.updateMatrix();
+      this.watch.position.copy(WATCH_POSITION);
+      if (tracked) this.watch.position.add(closer.sub(home));
+      this.trayPinch = false;
+      this.previous.leftTrigger = false;
+    }else this.previous.trigger = false;
+    if (tracked) this.connectHand(source);
+  }
+
+  detach(slot){
+    this.dropHand(slot);
+    slot.source = null;
+  }
+
+  dropHand(slot){
+    const hand = slot.hand;
+    slot.hand = null;
+    slot.ray.remove(this.watch, this.palette, this.tray);
+    slot.palm.remove(this.watch, this.palette, this.tray);
+    if (!hand) return;
+    const side = hand.source.handedness;
+    if (this.hands[side] !== hand) return;
+    if (hand.tracked) this.disconnectHand(side);
+    this.pull[side] = false;
+    this.previous.pinch[side] = false;
+    delete this.hands[side];
+  }
+
+  connectHand(source){
+    const side = source.handedness;
+    const visual = this.handVisuals[side];
+    if (visual){
+      visual.connect(source, true);
+      this.viewer.sceneVR.add(visual.model);
+      return;
+    }
+    if (this.handLoads[side]) return;
+    this.handLoads[side] = true;
+    this.models.gltfLoader.load(`${this.models.path}/generic-hand/${side}.glb`, gltf => {
+      this.handLoads[side] = false;
+      if (!gltf.scene.children.length) return;
+      try{
+        this.handVisuals[side] = new HandVisual(gltf.scene);
+      }catch(e){
+        console.warn(`Cannot use hand model for ${side} hand`, e);
+        return;
+      }
+      const hand = this.hands[side];
+      if (hand && hand.tracked) this.connectHand(hand.source);
+    }, undefined, e => {
+      this.handLoads[side] = false;
+      console.warn(`Cannot load hand model for ${side} hand`, e);
+    });
+  }
+
+  disconnectHand(side){
+    const visual = this.handVisuals[side];
+    if (!visual) return;
+    visual.disconnect();
+    this.viewer.sceneVR.remove(visual.model);
+  }
+
+  updateHands(){
+    const frame = this.frame;
+    if (!frame) return;
+    const reference = this.viewer.renderer.xr.getReferenceSpace();
+    for (const side of ["left", "right"]){
+      const hand = this.hands[side];
+      if (!hand || !hand.tracked) continue;
+      const visual = this.handVisuals[side];
+      if (visual) visual.update(frame, hand.grip);
+      const joint = name => {
+        const space = hand.source.hand.get(name);
+        const pose = space && frame.getJointPose(space, reference);
+        return pose ? new THREE.Vector3(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z) : null;
+      };
+      const wrist = joint("wrist"), index = joint("index-finger-phalanx-proximal"), middle = joint("middle-finger-phalanx-proximal"), pinky = joint("pinky-finger-phalanx-proximal");
+      hand.poke = joint("index-finger-tip");
+      const thumb = joint("thumb-tip");
+      hand.pinch = hand.poke && thumb ? hand.poke.clone().add(thumb).multiplyScalar(0.5) : null;
+      hand.gap = hand.poke && thumb ? hand.poke.distanceTo(thumb) : Infinity;
+      hand.finger = hand.poke && index ? hand.poke.clone().sub(index).normalize() : null;
+      if (!wrist || !index || !middle || !pinky) continue;
+      const along = middle.sub(wrist);
+      const across = index.clone().sub(pinky);
+      const palm = (side === "right" ? across.clone().cross(along) : along.clone().cross(across)).normalize();
+      along.addScaledVector(palm, -along.dot(palm)).normalize();
+      const z = along.clone().negate();
+      hand.palm.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(palm, z.clone().cross(palm), z));
+      hand.palm.position.copy(wrist).addScaledVector(along, PALM_OFFSET);
+      hand.palm.updateMatrix();
+    }
+  }
+
+  nearestEdge(at){
+    let best = null, bestD = 0.025 * this.scale;
+    for (const measurement of [...this.viewer.scene.measurements, ...this.viewer.scene.profiles]){
+      if (!measurement.visible) continue;
+      const points = measurement.points.map(p => p.position || p);
+      if (!points.length) continue;
+      const edges = Math.max(1, measurement.closed && points.length > 2 ? points.length : points.length - 1);
+      for (let i = 0; i < edges; i++){
+        const closest = new THREE.Line3(points[i], points[(i + 1) % points.length]).closestPointToPoint(at, true, new THREE.Vector3());
+        const d = closest.distanceTo(at);
+        if (d < bestD){
+          bestD = d;
+          best = measurement;
+        }
+      }
+    }
+    return best;
+  }
+
+  fingerTarget(hand){
+    const result = {nearest: null, hits: []};
+    if (!hand.poke || !hand.finger) return result;
+    const s = this.scale;
+    const origin = hand.poke.clone().applyMatrix4(this.rig);
+    const direction = hand.finger.clone().applyQuaternion(this.rigQuaternion);
+    let nearestT = Infinity;
+    for (const measurement of [...this.viewer.scene.measurements, ...this.viewer.scene.profiles]){
+      if (!measurement.visible) continue;
+      const points = measurement.points.map(p => p.position || p);
+      if (!points.length) continue;
+      const edges = Math.max(1, measurement.closed && points.length > 2 ? points.length : points.length - 1);
+      for (let i = 0; i < edges; i++){
+        const a = points[i].clone().sub(origin);
+        const u = points[(i + 1) % points.length].clone().sub(points[i]);
+        const uu = u.dot(u), ud = u.dot(direction), denominator = uu - ud * ud;
+        const k = denominator > 1e-12 ? Math.min(1, Math.max(0, (ud * a.dot(direction) - a.dot(u)) / denominator)) : 0;
+        const closest = a.addScaledVector(u, k);
+        const t = Math.max(0, closest.dot(direction));
+        if (closest.distanceTo(direction.clone().multiplyScalar(t)) < Math.max(0.03 * s, t * 0.026)){
+          if (result.hits.indexOf(measurement) === -1) result.hits.push(measurement);
+          if (t < nearestT){
+            nearestT = t;
+            result.nearest = measurement;
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  directPinch(hand){
+    const viewer = this.viewer;
+    if (this.drag && this.drag.creating){
+      this.drag.hand = hand;
+      this.drag.adder = hand;
+      this.drag.direct = true;
+      this.drag.held = true;
+      this.drag.closed = hand.gap;
+      this.drag.stable = null;
+      this.drag.samples = [];
+      this.drag.sampled = 0;
+      return true;
+    }
+    const at = hand.pinch.clone().applyMatrix4(this.rig);
+    const near = this.nearestEdge(at) || this.fingerTarget(hand).nearest;
+    if (this.deleting){
+      if (!near) return false;
+      if (near instanceof Potree.Profile) viewer.scene.removeProfile(near);
+      else viewer.scene.removeMeasurement(near);
+      this.editing.delete(near);
+      return true;
+    }
+    const s = this.scale;
+    const h = 5 * 2 / 3 / s, w = 1.875 / s;
+    let best = null, bestD = w / 2 + 0.015;
+    for (const measurement of this.editing){
+      measurement.points.forEach((point, index) => {
+        const tip = (point.position || point).clone().applyMatrix4(this.rigInverse);
+        tip.y += Math.min(h, Math.max(0, hand.pinch.y - tip.y));
+        const d = hand.pinch.distanceTo(tip);
+        if (d < bestD){
+          bestD = d;
+          best = {measurement, index};
+        }
+      });
+    }
+    if (best){
+      this.drag = {hand, measurement: best.measurement, index: best.index, direct: true, held: true, moved: true, closed: hand.gap, stable: null, samples: [], sampled: 0};
+      return true;
+    }
+    if (near){
+      this.editing = new Set([near]);
+      return true;
+    }
+    return false;
+  }
+
+  sample(drag, position){
+    const time = performance.now();
+    if (!drag.samples) drag.samples = [];
+    if (time - (drag.sampled || 0) < 250) return;
+    drag.sampled = time;
+    drag.samples.push(position.clone());
+    if (drag.samples.length > 4) drag.samples.shift();
+  }
+
+  settle(drag){
+    if (!drag.samples || !drag.samples.length) return false;
+    const median = axis => {
+      const values = drag.samples.map(p => p[axis]).sort((a, b) => a - b);
+      const middle = values.length >> 1;
+      return values.length % 2 ? values[middle] : (values[middle - 1] + values[middle]) / 2;
+    };
+    drag.measurement.setPosition(drag.index, new THREE.Vector3(median("x"), median("y"), median("z")));
+    return true;
+  }
+
+  releaseDirect(hand){
+    const drag = this.drag;
+    if (!drag || !drag.direct || !drag.held) return;
+    if (!this.settle(drag) && drag.stable) drag.measurement.setPosition(drag.index, drag.stable.clone().applyMatrix4(this.rig));
+    if (drag.creating){
+      drag.held = false;
+      const measurement = drag.measurement;
+      if (measurement.points.length >= measurement.maxMarkers) this.drag = null;
+      else{
+        measurement.addMarker(measurement.points[measurement.points.length - 1].position.clone());
+        drag.index = measurement.points.length - 1;
+      }
+    }else{
+      drag.measurement.dispatchEvent({type: "marker_dropped", [drag.measurement instanceof Potree.Profile ? "profile" : "measurement"]: drag.measurement, index: drag.index});
+      this.drag = null;
+    }
+  }
+
+  aimed(hand){
+    const s = this.scale;
+    const origin = hand.ray.position.clone().applyMatrix4(this.rig);
+    const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(hand.ray.quaternion).applyQuaternion(this.rigQuaternion);
+    for (const measurement of [...this.viewer.scene.measurements, ...this.viewer.scene.profiles]){
+      if (!measurement.visible) continue;
+      const points = measurement.points.map(p => p.position || p);
+      if (!points.length) continue;
+      const edges = Math.max(1, measurement.closed && points.length > 2 ? points.length : points.length - 1);
+      for (let i = 0; i < edges; i++){
+        const a = points[i].clone().sub(origin);
+        const u = points[(i + 1) % points.length].clone().sub(points[i]);
+        const uu = u.dot(u), ud = u.dot(direction), denominator = uu - ud * ud;
+        const k = denominator > 1e-12 ? Math.min(1, Math.max(0, (ud * a.dot(direction) - a.dot(u)) / denominator)) : 0;
+        const closest = a.addScaledVector(u, k);
+        const t = Math.max(0, closest.dot(direction));
+        if (closest.distanceTo(direction.clone().multiplyScalar(t)) < Math.max(0.03 * s, t * 0.026)) return true;
+      }
+    }
+    const tabletop = this.mode === "tabletop";
+    const h = (tabletop ? 5 : 1) * 2 / 3 / s, w = (tabletop ? 1.875 : 0.3) / s;
+    const rayDirection = new THREE.Vector3(0, 0, -1).applyQuaternion(hand.ray.quaternion);
+    for (const measurement of this.editing){
+      for (const point of measurement.points){
+        const a = (point.position || point).clone().applyMatrix4(this.rigInverse).sub(hand.ray.position);
+        const ud = h * rayDirection.y, denominator = h * h - ud * ud;
+        const k = denominator > 1e-12 ? Math.min(1, Math.max(0, (ud * a.dot(rayDirection) - h * a.y) / denominator)) : 0;
+        a.y += h * k;
+        const t = a.dot(rayDirection);
+        if (t > 0 && a.distanceTo(rayDirection.clone().multiplyScalar(t)) < w / 2 + 0.01) return true;
+      }
+    }
+    return false;
+  }
+
   cancelCreation = () => {
     if (this.drag && this.drag.creating){
       const measurement = this.drag.measurement;
@@ -351,6 +667,7 @@ class VRControls{
     this.hits = new Set();
     this.editing = new Set();
     this.deleting = false;
+    this.pull = {left: false, right: false};
     const view = viewer.scene.view;
     const direction = view.direction;
     this.yaw = Math.atan2(direction.y, direction.x) - Math.PI / 2;
@@ -512,6 +829,7 @@ class VRControls{
     const viewer = this.viewer;
     const xr = viewer.renderer.xr;
     if (!xr.isPresenting) return;
+    this.syncInputs();
     delta = Math.min(delta, 0.1);
     const left = this.hands.left;
     const right = this.hands.right;
@@ -522,13 +840,68 @@ class VRControls{
       return axes.length >= 4 ? {x: axes[2], y: axes[3]} : {x: axes[0] || 0, y: axes[1] || 0};
     };
     const pressed = (gamepad, i) => !!(gamepad && gamepad.buttons[i] && gamepad.buttons[i].pressed);
+    const handLeft = !!left && left.tracked, handRight = !!right && right.tracked;
     const move = stick(pad(left));
     const turn = stick(pad(right));
-    const jump = pressed(pad(right), 4);
-    const toggle = pressed(pad(right), 5);
-    const undo = pressed(pad(left), 5), redo = pressed(pad(left), 4);
+    const jump = !handRight && pressed(pad(right), 4);
+    const toggle = !handRight && pressed(pad(right), 5);
+    const undo = !handLeft && pressed(pad(left), 5), redo = !handLeft && pressed(pad(left), 4);
     const creating = !!this.drag && !!this.drag.creating;
     const busy = creating || this.deleting;
+    this.updateHands();
+    let aimReleased = false;
+    const clock = performance.now();
+    for (const side of ["left", "right"]){
+      const hand = this.hands[side];
+      const other = side === "left" ? "right" : "left";
+      const down = !!hand && hand.tracked && hand.ray.visible && pressed(pad(hand), 0);
+      if (down && !this.previous.pinch[side]){
+        if (side === "left" && this.previous.trayFacing > 0.7) this.trayPinch = true;
+        const open = !(side === "left" && this.trayPinch) && !(side === "right" && this.previous.pointerBusy);
+        const direct = open && this.mode === "tabletop" && this.measureMode === "measure" && !!hand.pinch;
+        if (open && this.mode === "walk" && !this.drag) this.editHand = side;
+        if (open && this.drag && this.drag.creating && this.drag.adder && this.drag.adder !== hand){
+          if (this.drag.held) this.releaseDirect(this.drag.adder);
+          if (this.drag && this.drag.creating) this.cancelCreation();
+          this.pull[side] = "done";
+        }else if (direct && this.directPinch(hand)) this.pull[side] = "direct";
+        else{
+          const free = open && !busy && !(this.measureMode === "measure" && !direct && this.aimed(hand));
+          this.pull[side] = free ? (side === "right" && this.mode === "walk" && !this.pull[other] ? "pending" : "pull") : false;
+        }
+        if (this.pull[side]) this.pullStart[side] = {at: hand.ray.position.clone(), time: clock};
+      }
+      if (!down && this.pull[side] === "direct") this.releaseDirect(hand);
+      if (!down && side === "left") this.trayPinch = false;
+      if (down && this.pull[side] === "pending"){
+        if (this.pull[other] || hand.ray.position.distanceTo(this.pullStart[side].at) > 0.02) this.pull[side] = "pull";
+        else if (clock - this.pullStart[side].time > 400) this.pull[side] = "aim";
+      }
+      if (!down && this.pull[side]){
+        const still = this.pull[side] === "pending" || (this.pull[side] === "pull" && !!hand && hand.ray.position.distanceTo(this.pullStart[side].at) < 0.01);
+        if (still && !this.pull[other]) this.editing = new Set();
+        if (this.pull[side] === "aim" && hand && hand.ray.visible) aimReleased = true;
+        this.pull[side] = false;
+      }
+      this.previous.pinch[side] = down;
+    }
+    const pullBoth = this.pull.left === "pull" && this.pull.right === "pull";
+    if (this.drag && this.drag.direct && this.drag.held){
+      const hand = this.drag.hand;
+      if (!hand.tracked || this.hands[hand.source.handedness] !== hand) this.cancelCreation();
+      else if (hand.pinch){
+        if (hand.gap <= this.drag.closed + 0.008){
+          this.drag.closed = Math.min(this.drag.closed, hand.gap);
+          this.drag.stable = hand.pinch.clone();
+        }
+        if (this.drag.stable){
+          const position = this.drag.stable.clone().applyMatrix4(this.rig);
+          this.drag.measurement.setPosition(this.drag.index, position);
+          this.drag.aimed = true;
+          this.sample(this.drag, position);
+        }
+      }
+    }
     if (busy && ((undo && !this.previous.undo) || (redo && !this.previous.redo) || (toggle && !this.previous.toggle) || (jump && !this.previous.jump))){
       this.cancelCreation();
       this.deleting = false;
@@ -539,8 +912,8 @@ class VRControls{
     this.previous.redo = redo;
     if (!busy && toggle && !this.previous.toggle) this.measureMode = this.measureMode === "measure" ? "off" : "measure";
     this.previous.toggle = toggle;
-    const trigger = pressed(pad(right), 0);
-    const pinching = this.mode === "tabletop" && !!left && !!right &&(trigger || pressed(pad(right), 1)) && (pressed(pad(left), 0) || pressed(pad(left), 1));
+    const trigger = pressed(pad(right), 0) && !this.pull.right;
+    const pinching = pullBoth || (this.mode === "tabletop" && !!left && !!right && !handLeft && !handRight && (trigger || pressed(pad(right), 1)) && (pressed(pad(left), 0) || pressed(pad(left), 1)));
     const teleportAxis = Math.hypot(turn.x, turn.y) >= THRESHOLD && Math.abs(turn.y) >= Math.abs(turn.x);
 
     const head = xr.getCamera(new THREE.PerspectiveCamera());
@@ -695,22 +1068,38 @@ class VRControls{
         this.pinch = {anchor: middle.clone().applyMatrix4(this.rig), angle, distance, yaw: this.yaw, scale: this.scale};
         this.velocity.set(0, 0, 0);
       }
-      this.yaw = this.pinch.yaw - (angle - this.pinch.angle);
-      this.scale = this.pinch.scale * this.pinch.distance / distance;
+      const walk = this.mode === "walk";
+      const level = this.position.z;
+      const turned = angle - this.pinch.angle;
+      this.yaw = this.pinch.yaw - (pullBoth ? Math.atan2(Math.sin(turned), Math.cos(turned)) * 0.7 : turned);
+      if (!walk) this.scale = this.pinch.scale * this.pinch.distance / distance;
       this.position.set(0, 0, 0);
       this.updateRig();
       this.position.copy(this.pinch.anchor).sub(middle.clone().applyMatrix4(this.rig));
+      if (walk) this.position.z = level;
       this.updateRig();
     }else this.pinch = null;
 
-    const gripLeft = pressed(pad(left), 1), gripRight = pressed(pad(right), 1);
-    const grabHand = !pinching && this.mode === "tabletop" && gripLeft !== gripRight ? (gripLeft ? left : right) : null;
+    const table = this.mode === "tabletop";
+    const gripLeft = (this.pull.left === "pull" && !pinching) || (table && !handLeft && pressed(pad(left), 1)), gripRight = (this.pull.right === "pull" && !pinching) || (table && !handRight && pressed(pad(right), 1));
+    const grabHand = !pinching && gripLeft !== gripRight ? (gripLeft ? left : right) : null;
     if (grabHand){
       const at = grabHand.ray.position;
-      if (!this.grab || this.grab.hand !== grabHand) this.grab = {hand: grabHand, anchor: at.clone().applyMatrix4(this.rig)};
-      this.position.set(0, 0, 0);
-      this.updateRig();
-      this.position.copy(this.grab.anchor).sub(at.clone().applyMatrix4(this.rig));
+      if (!this.grab || this.grab.hand !== grabHand || (grabHand.tracked && (this.grab.yaw !== this.yaw || this.grab.scale !== this.scale))) this.grab = {hand: grabHand, anchor: at.clone().applyMatrix4(this.rig), start: this.position.clone(), from: at.clone(), yaw: this.yaw, scale: this.scale};
+      const level = this.position.z;
+      if (grabHand.tracked){
+        this.position.copy(this.grab.start).add(this.grab.from.clone().sub(at).applyQuaternion(this.rigQuaternion).multiplyScalar(this.scale * (table ? 1 : 10)));
+      }else{
+        this.position.set(0, 0, 0);
+        this.updateRig();
+        this.position.copy(this.grab.anchor).sub(at.clone().applyMatrix4(this.rig));
+      }
+      if (!table){
+        this.position.z = level;
+        this.velocity.x = this.velocity.y = 0;
+        this.updating = true;
+        this.lastUpdate = performance.now();
+      }
       this.updateRig();
     }else this.grab = null;
     const tabletop = this.mode === "tabletop";
@@ -720,25 +1109,27 @@ class VRControls{
     let hover = null;
     let rayHover = null;
     let rayPress = null;
-    const palm = left && new THREE.Vector3(1, 0, 0).applyQuaternion(left.ray.quaternion);
+    const palm = left && new THREE.Vector3(1, 0, 0).applyQuaternion(left.anchor.quaternion);
     const panelFacing = [
-      left && WATCH_FACE.clone().applyQuaternion(left.ray.quaternion).dot(headPosition.clone().sub(WATCH_POSITION.clone().applyMatrix4(left.ray.matrix)).normalize()),
-      left && Math.max(palm.y, palm.dot(headPosition.clone().sub(TRAY_POSITION.clone().applyMatrix4(left.ray.matrix)).normalize()))
+      left && WATCH_FACE.clone().applyQuaternion(left.anchor.quaternion).dot(headPosition.clone().sub(this.watch.position.clone().applyMatrix4(left.anchor.matrix)).normalize()),
+      left && Math.max(palm.y, palm.dot(headPosition.clone().sub(TRAY_POSITION.clone().applyMatrix4(left.anchor.matrix)).normalize()))
     ];
+    const roll = left && left.tracked ? Math.atan2(-new THREE.Vector3(0, 1, 0).applyQuaternion(left.anchor.quaternion).y, -new THREE.Vector3(1, 0, 0).applyQuaternion(left.anchor.quaternion).y) : 0;
     this.pointer.visible = false;
     let pointerT = Infinity;
     this.panels.forEach((panel, i) => {
       if (!left) panel.visible = false;
-      else if (!panel.visible && panelFacing[i] > 0.7) panel.visible = true;
+      else if (!panel.visible && panelFacing[i] > 0.7 && (panel !== this.trayPanel || !left.tracked || this.trayPinch) && (panel !== this.palettePanel || !left.tracked || roll >= 15 * Math.PI / 180)) panel.visible = true;
       else if (panel.visible && panelFacing[i] < 0.5 && !panel.buttons.some(b => b.engaged)) panel.visible = false;
       panel.group.visible = panel.visible;
       panel.tip = null;
       if (!panel.visible || !right) return;
-      const toPanel = left.ray.matrix.clone().multiply(panel.group.matrix).invert();
-      panel.tip = right.ray.position.clone().applyMatrix4(toPanel);
+      const toPanel = left.anchor.matrix.clone().multiply(panel.group.matrix).invert();
+      panel.tip = (right.poke || right.ray.position).clone().applyMatrix4(toPanel);
+      const from = right.ray.position.clone().applyMatrix4(toPanel);
       const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(right.ray.quaternion).transformDirection(toPanel);
-      const t = direction.z < 0 ? (EXTRUDE - panel.tip.z) / direction.z : -1;
-      const at = panel.tip.clone().addScaledVector(direction, t);
+      const t = direction.z < 0 ? (EXTRUDE - from.z) / direction.z : -1;
+      const at = from.clone().addScaledVector(direction, t);
       if (t > 0 && t < 1 && t < pointerT && Math.abs(at.x) <= panel.width / 2 && Math.abs(at.y) <= panel.height / 2){
         pointerT = t;
         pointerBusy = true;
@@ -752,14 +1143,14 @@ class VRControls{
       }
     });
 
-    const leftTrigger = pressed(pad(left), 0);
+    const leftTrigger = pressed(pad(left), 0) && !this.pull.left && !this.trayPinch;
     const leftEdge = leftTrigger && !this.previous.leftTrigger, rightEdge = trigger && !this.previous.trigger && !pointerBusy;
     this.previous.leftTrigger = leftTrigger;
     this.previous.trigger = trigger;
     const measuring = this.measureMode === "measure";
     if (!this.drag && (leftEdge || rightEdge)) this.editHand = leftEdge ? "left" : "right";
     const editHand = this.hands[this.editHand];
-    const laserHand = measuring && !pinching && editHand && !(editHand === right && pointerBusy) ? editHand : null;
+    const laserHand = measuring && !pinching && editHand && !(editHand === right && pointerBusy) && !(tabletop && editHand.tracked) ? editHand : null;
     const holding = !!laserHand && (laserHand === left ? leftTrigger : trigger);
     const edge = !!laserHand && (laserHand === left ? leftEdge : rightEdge);
     const buzz = hand => {
@@ -769,7 +1160,8 @@ class VRControls{
     const measurements = [...viewer.scene.measurements, ...viewer.scene.profiles];
     for (const measurement of this.editing) if (!measuring || !measurement.visible || !measurements.includes(measurement)) this.editing.delete(measurement);
     if (this.drag && this.drag.creating && !this.editing.has(this.drag.measurement)) this.cancelCreation();
-    if (this.drag && !this.drag.creating && (this.drag.hand !== laserHand || !holding || !this.editing.has(this.drag.measurement))){
+    if (this.drag && !this.drag.creating && !this.drag.direct && (this.drag.hand !== laserHand || !holding || !this.editing.has(this.drag.measurement))){
+      if (this.editing.has(this.drag.measurement)) this.settle(this.drag);
       this.drag.measurement.dispatchEvent({type: "marker_dropped", [this.drag.measurement instanceof Potree.Profile ? "profile" : "measurement"]: this.drag.measurement, index: this.drag.index});
       buzz(this.drag.hand);
       this.drag = null;
@@ -798,6 +1190,11 @@ class VRControls{
           this.drag.aimed = true;
         }else if (ray.z < 0 && (level - origin.z) / ray.z > 0) this.drag.measurement.setPosition(this.drag.index, origin.clone().addScaledVector(ray, (level - origin.z) / ray.z));
       }
+    }
+
+    if (this.drag && !this.drag.creating && !this.drag.direct && this.drag.moved){
+      const point = this.drag.measurement.points[this.drag.index];
+      if (point) this.sample(this.drag, point.position || point);
     }
 
     const hits = new Set();
@@ -842,6 +1239,14 @@ class VRControls{
         pin.visible = true;
         pin.material = this.pinMaterial;
         if (this.drag && this.drag.measurement === measurement && this.drag.index === index) highlight = pin;
+        if (tabletop && !this.drag){
+          for (const hand of [left, right]){
+            if (!hand || !hand.tracked || !hand.pinch) continue;
+            const top = tip.clone();
+            top.y += Math.min(h, Math.max(0, hand.pinch.y - tip.y));
+            if (hand.pinch.distanceTo(top) < w / 2 + 0.015) highlight = pin;
+          }
+        }
         if (laserHand && !this.drag){
           const a = tip.clone().sub(laserHand.ray.position);
           const ud = h * rayDirection.y, denominator = h * h - ud * ud;
@@ -864,7 +1269,7 @@ class VRControls{
         if (dots === this.dots.children.length) this.dots.add(new THREE.Mesh(this.dotGeometry, this.pinHoverMaterial));
         const dot = this.dots.children[dots++];
         dot.position.copy(measurement.points[0].position).applyMatrix4(this.rigInverse);
-        dot.scale.setScalar(tabletop ? w / 2 : w);
+        dot.scale.setScalar(tabletop ? w / 2 * 0.6 : w);
         dot.visible = true;
       }
     }
@@ -877,6 +1282,7 @@ class VRControls{
     this.hits = hits;
     if (edge && this.drag && this.drag.creating && !this.drag.aimed) buzz(laserHand);
     else if (edge && this.drag && this.drag.creating){
+      this.drag.adder = laserHand;
       const measurement = this.drag.measurement;
       if (measurement.points.length >= measurement.maxMarkers) this.drag = null;
       else{
@@ -902,10 +1308,15 @@ class VRControls{
     }
 
     this.labeled = new Set(hits);
+    if (tabletop && measuring){
+      for (const hand of [left, right]){
+        if (hand && hand.tracked) for (const measurement of this.fingerTarget(hand).hits) this.labeled.add(measurement);
+      }
+    }
     if (this.drag) this.labeled.add(this.drag.measurement);
     this.laser.visible = !!laserHand && !this.drag;
-    this.dragLine.visible = !!this.drag;
-    if (this.drag){
+    this.dragLine.visible = !!this.drag && !this.drag.direct && !(tabletop && this.drag.hand && this.drag.hand.tracked);
+    if (this.dragLine.visible){
       const point = this.drag.measurement.points[this.drag.index];
       const positions = this.dragLine.geometry.attributes.position;
       positions.setXYZ(0, this.drag.hand.ray.position.x, this.drag.hand.ray.position.y, this.drag.hand.ray.position.z);
@@ -1094,13 +1505,9 @@ class VRControls{
     else if (turn.x >= THRESHOLD && this.previous.turn < THRESHOLD) this.yaw -= SNAP_ANGLE;
     this.updateRig();
 
-    const teleportActive = !tabletop && !pointerBusy && !pinching && teleportAxis && !!right;
+    const teleportActive = !tabletop && !pointerBusy && !pinching && !grabHand && (teleportAxis || this.pull.right === "aim") && !!right;
     const targetValid = !!this.hit && this.hit.normal.z > 0.7;
     if (teleportActive){
-      if (!this.previous.teleport){
-        this.line.visible = true;
-        this.marker.visible = true;
-      }
       const origin = right.ray.position.clone().applyMatrix4(this.rig);
       const direction = new THREE.Vector3(0, 0, 1).applyQuaternion(right.ray.quaternion).applyQuaternion(this.rigQuaternion).multiplyScalar(s);
       sampleParabola(origin, direction, this.position.z - MAX_DROP * s, RAY_GRAVITY * s, this.rayPoints, 0);
@@ -1132,7 +1539,7 @@ class VRControls{
       this.line.geometry.attributes.position.needsUpdate = true;
       this.line.geometry.attributes.alpha.needsUpdate = true;
     }else if (this.previous.teleport){
-      if (targetValid && !teleportAxis && !pinching){
+      if (targetValid && (handRight ? aimReleased : !teleportAxis) && !pinching){
         this.position.copy(this.hit.point);
         this.velocity.set(0, 0, 0);
         this.jumping = false;
@@ -1140,9 +1547,9 @@ class VRControls{
         this.updating = true;
         this.lastUpdate = performance.now();
       }
-      this.line.visible = false;
-      this.marker.visible = false;
     }
+    this.line.visible = teleportActive;
+    this.marker.visible = teleportActive;
 
     if (!busy && !tabletop && jump && !this.previous.jump && this.grounded && performance.now() / 1000 - this.lastJump > JUMP_COOLDOWN){
       this.velocity.z = Math.sqrt(2 * GRAVITY * s * JUMP_HEIGHT * s);
@@ -1155,10 +1562,18 @@ class VRControls{
 
     let vignetteTarget = 0;
     const input = pinching ? 0 : Math.min(Math.hypot(move.x, move.y), 1);
+    const sprint = !handLeft && pressed(pad(left), 3);
+    if (sprint && !this.previous.sprint){
+      this.running = true;
+      this.runMoved = false;
+    }
+    if (input > 0) this.runMoved = true;
+    else if (this.runMoved) this.running = false;
+    this.previous.sprint = sprint;
     if (input > 0){
       this.movement.set(move.x, 0, move.y).applyQuaternion(headQuaternion);
       this.movement.y = 0;
-      this.movement.normalize().multiplyScalar(input * SLIDE_SPEED * s * (this.mode === "tabletop" ? 0.2 : 1)).applyQuaternion(this.rigQuaternion);
+      this.movement.normalize().multiplyScalar(input * SLIDE_SPEED * s * (this.mode === "tabletop" ? 0.2 : 1) * (this.running ? 3 : 1)).applyQuaternion(this.rigQuaternion);
       this.updating = true;
       this.lastUpdate = performance.now();
       vignetteTarget = input * COMFORT_ASSIST;
@@ -1218,6 +1633,8 @@ class VRControls{
     viewer.scene.view.setView(scenePosition, sceneTarget);
 
     this.previous.turn = turn.x;
+    this.previous.pointerBusy = pointerBusy;
+    this.previous.trayFacing = left ? panelFacing[1] : 0;
     this.previous.teleport = teleportActive;
     this.previous.jump = jump;
   }
