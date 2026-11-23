@@ -106,10 +106,10 @@
                 {% block navbar-top-links %}{% endblock %}
             
                 {% if '/public/task/' in request.path and request.user.is_anonymous and SETTINGS.organization_website %}
-                    <a class="navbar-brand" href="{{ SETTINGS.organization_website }}"><img src="{% settings_image_url 'app_logo_36' %}" alt="{{ SETTINGS.app_name }}" /></a>
+                    <a class="navbar-brand" href="{{ SETTINGS.organization_website }}"><img src="{% settings_image_url 'app_logo_36' %}" srcset="{% settings_image_url 'app_logo_108' %} 3x" alt="{{ SETTINGS.app_name }}" /></a>
                     <a class="navbar-link" href="{{ SETTINGS.organization_website }}"><p class="navbar-text">{{ SETTINGS.app_name }}</p></a>
                 {% else %}
-                    <a class="navbar-brand" href="/"><img src="{% settings_image_url 'app_logo_36' %}" alt="{{ SETTINGS.app_name }}" /></a>
+                    <a class="navbar-brand" href="/"><img src="{% settings_image_url 'app_logo_36' %}" srcset="{% settings_image_url 'app_logo_108' %} 3x" alt="{{ SETTINGS.app_name }}" /></a>
                     <a class="navbar-link" href="/"><p class="navbar-text">{{ SETTINGS.app_name }}</p></a>
                 {% endif %}
             </div>
