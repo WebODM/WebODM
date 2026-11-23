@@ -731,7 +731,7 @@ class ModelView extends React.Component {
   }
 
   handleInsert = (item) => {
-    if (!Utils.isMobile()) this.setState({panel: "project", inserted: item, focused: null});
+    if (!Utils.isMobile() || item instanceof Potree.CameraAnimation || (item instanceof Potree.Annotation && item.hasView())) this.setState({panel: "project", inserted: item, focused: null});
   }
 
   handleSmallScreen = () => {
@@ -993,14 +993,6 @@ class ModelView extends React.Component {
     viewer.setEDLOpacity(flag ? 1 : 0);
     viewer.useHQ = flag && !!this.settings.hq;
 
-    if (flag && this.savedPointBudget){
-        viewer.setPointBudget(this.savedPointBudget);
-        this.savedPointBudget = null;
-    }else if (!flag && !this.savedPointBudget){
-        this.savedPointBudget = viewer.getPointBudget();
-        viewer.setPointBudget(Math.min(this.savedPointBudget, 500000));
-    }
-
     // On mobile, for performance and because opacity doesn't
     // seem to work consistently, we remove the ability to do
     // measurements
@@ -1008,6 +1000,14 @@ class ModelView extends React.Component {
         for(let pointcloud of viewer.scene.pointclouds){
             pointcloud.visible = flag;
         }
+    }
+
+    if (flag && this.savedPointBudget){
+        viewer.setPointBudget(this.savedPointBudget);
+        this.savedPointBudget = null;
+    }else if (!flag && !this.savedPointBudget){
+        this.savedPointBudget = viewer.getPointBudget();
+        viewer.setPointBudget(Math.min(this.savedPointBudget, 500000));
     }
   }
 

@@ -81182,7 +81182,7 @@ ENDSEC
 			e.preventDefault();
 
 			if (this.touchMouse && e.touches.length === 0) {
-				const {clientX, clientY} = e.changedTouches[0];
+				const {clientX, clientY} = this.touchStart.moved ? e.changedTouches[0] : this.touchStart;
 				const hold = !this.touchStart.moved && e.timeStamp - this.touchStart.time >= 600;
 				this.domElement.dispatchEvent(new MouseEvent('mouseup', {clientX, clientY, button: hold ? 2 : 0, bubbles: true}));
 			}
@@ -81203,7 +81203,7 @@ ENDSEC
 			if (this.touchMouse) {
 				const {clientX, clientY} = e.touches[0];
 				if (Math.hypot(clientX - this.touchStart.clientX, clientY - this.touchStart.clientY) > 10) this.touchStart.moved = true;
-				this.domElement.dispatchEvent(new MouseEvent('mousemove', {clientX, clientY, buttons: 1, bubbles: true}));
+				if (this.touchStart.moved) this.domElement.dispatchEvent(new MouseEvent('mousemove', {clientX, clientY, buttons: 1, bubbles: true}));
 			}
 
 			for (let inputListener of this.getSortedListeners()) {
@@ -81989,6 +81989,9 @@ ENDSEC
 					let resolvedRadius = this.scene.view.radius + this.radiusDelta;
 					let newRadius = resolvedRadius / delta;
 					this.radiusDelta = newRadius - resolvedRadius;
+
+					this.panDelta.x += (curr.touches[0].pageX + curr.touches[1].pageX - prev.touches[0].pageX - prev.touches[1].pageX) / 2 / this.renderer.domElement.clientWidth / 2;
+					this.panDelta.y += (curr.touches[0].pageY + curr.touches[1].pageY - prev.touches[0].pageY - prev.touches[1].pageY) / 2 / this.renderer.domElement.clientHeight / 2;
 
 					this.stopTweens();
 				}else if(e.touches.length === 3 && previousTouch.touches.length === 3){
@@ -90087,7 +90090,7 @@ ENDSEC
 	exports.scriptPath = "";
 
 	if (document.currentScript && document.currentScript.src) {
-		exports.scriptPath = new URL(document.currentScript.src + '/..').href;
+		exports.scriptPath = new URL(document.currentScript.src.split('?')[0] + '/..').href;
 		if (exports.scriptPath.slice(-1) === '/') {
 			exports.scriptPath = exports.scriptPath.slice(0, -1);
 		}

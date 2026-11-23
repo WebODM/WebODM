@@ -52,8 +52,13 @@ class Toolbar extends React.Component{
   handleMouseUp = (e) => {
     const { viewer } = this.props;
     const item = e.button === 2 ? this.inserting : null;
+    const placed = e.button === 0 && Utils.isMobile() && this.inserting instanceof Potree.Volume ? this.inserting : null;
     if (item) this.inserting = null;
     setTimeout(() => {
+      if (placed){
+        viewer.inputHandler.deselectAll();
+        viewer.inputHandler.toggleSelection(placed);
+      }
       if (item instanceof Potree.Measure){
         if (item.maxMarkers !== Infinity || item.points.length < (item.closed ? 3 : 2)) viewer.scene.removeMeasurement(item);
       }else if (item instanceof Potree.Profile){
@@ -273,7 +278,10 @@ class Toolbar extends React.Component{
       }
     ];
 
-    if (Utils.isMobile()) groups.shift();
+    if (Utils.isMobile()){
+      groups.shift();
+      groups.find(g => g.id === "clipping").items.shift();
+    }
 
     if (this.props.onEnterVR){
       groups.push({
