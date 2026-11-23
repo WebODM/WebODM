@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import '../../css/modelview/Toolbar.scss';
 import '../../css/modelview/Icons.scss';
 import { _, interpolate } from '../../classes/gettext';
+import Utils from '../../classes/Utils';
 
 class Toolbar extends React.Component{
   static propTypes = {
@@ -31,16 +32,42 @@ class Toolbar extends React.Component{
     document.addEventListener("keydown", this.handleKeyDown);
     this.props.viewer.measuringTool.addEventListener("start_inserting_measurement", this.handleInsertion);
     this.props.viewer.renderer.domElement.addEventListener("mousedown", this.handleMouseDown, true);
+    this.props.viewer.renderer.domElement.addEventListener("mouseup", this.handleMouseUp);
   }
 
   componentWillUnmount(){
     document.removeEventListener("keydown", this.handleKeyDown);
     this.props.viewer.measuringTool.removeEventListener("start_inserting_measurement", this.handleInsertion);
     this.props.viewer.renderer.domElement.removeEventListener("mousedown", this.handleMouseDown, true);
+    this.props.viewer.renderer.domElement.removeEventListener("mouseup", this.handleMouseUp);
   }
 
   handleKeyDown = (e) => {
-    if (e.key === "Escape") this.cancelInsertion();
+    if (e.key === "Escape"){
+      this.cancelInsertion();
+      this.forceUpdate();
+    }
+  }
+
+  handleMouseUp = (e) => {
+    const { viewer } = this.props;
+    const item = e.button === 2 ? this.inserting : null;
+    if (item) this.inserting = null;
+    setTimeout(() => {
+      if (item instanceof Potree.Measure){
+        if (item.maxMarkers !== Infinity || item.points.length < (item.closed ? 3 : 2)) viewer.scene.removeMeasurement(item);
+      }else if (item instanceof Potree.Profile){
+        if (item.points.length < 2){
+          viewer.scene.removeProfile(item);
+          viewer.profileWindow.hide();
+        }
+      }else if (item instanceof Potree.Volume){
+        viewer.scene.removeVolume(item);
+      }else if (item instanceof Potree.PolygonClipVolume){
+        if (item.markers.length < 3) viewer.scene.removePolygonClipVolume(item);
+      }
+      this.forceUpdate();
+    }, 0);
   }
 
   handleInsertion = (e) => {
@@ -53,28 +80,12 @@ class Toolbar extends React.Component{
 
   cancelInsertion = () => {
     const { viewer } = this.props;
-    const item = this.inserting;
-    this.inserting = null;
     if (viewer.inputHandler.paused){
       viewer.inputHandler.startDragging(viewer.inputHandler.paused);
       viewer.inputHandler.paused = null;
     }
-    if (!item || !viewer.inputHandler.drag) return;
-
-    viewer.renderer.domElement.dispatchEvent(new MouseEvent("mouseup", {button: 2, bubbles: true}));
-
-    if (item instanceof Potree.Measure){
-      if (item.maxMarkers !== Infinity || item.points.length < (item.closed ? 3 : 2)) viewer.scene.removeMeasurement(item);
-    }else if (item instanceof Potree.Profile){
-      if (item.points.length < 2){
-        viewer.scene.removeProfile(item);
-        viewer.profileWindow.hide();
-      }
-    }else if (item instanceof Potree.Volume){
-      viewer.scene.removeVolume(item);
-    }else if (item instanceof Potree.PolygonClipVolume){
-      viewer.scene.removePolygonClipVolume(item);
-    }
+    if (this.inserting && viewer.inputHandler.drag) viewer.renderer.domElement.dispatchEvent(new MouseEvent("mouseup", {button: 2, bubbles: true}));
+    this.inserting = null;
   }
 
   measure = (args, kind) => {
@@ -100,6 +111,8 @@ class Toolbar extends React.Component{
     const { open } = this.state;
     const pc = viewer.scene.pointclouds[0];
     const fp = viewer.fpControls;
+
+    const inserting = title => !!this.inserting && this.started === title && !!(viewer.inputHandler.drag || viewer.inputHandler.paused);
 
     const groups = [
       {
@@ -260,6 +273,8 @@ class Toolbar extends React.Component{
       }
     ];
 
+    if (Utils.isMobile()) groups.shift();
+
     if (this.props.onEnterVR){
       groups.push({
         id: "vr", icon: "fa fa-vr-cardboard", title: _("VR"),
@@ -274,16 +289,18 @@ class Toolbar extends React.Component{
         {groups.map((g, i) => g.separator ?
           <div key={i} className="mv-toolbar-separator"></div> :
           <button key={g.id} type="button" title={g.title} disabled={!!g.disabled}
-                  className={"mv-toolbar-btn " + (open === g.id || g.active ? "active" : "")}
+                  className={"mv-toolbar-btn " + (open === g.id || g.active || inserting(g.title) ? "active" : "")}
                   onClick={() => {
                     if (g.items){
                       if (open === "measures") this.cancelInsertion();
                       this.setState({open: open === g.id ? null : g.id});
-                    }else if (this.inserting && this.started === g.title && (viewer.inputHandler.drag || viewer.inputHandler.paused)) this.cancelInsertion();
+                    }else if (inserting(g.title)) this.cancelInsertion();
                     else{
+                      this.cancelInsertion();
                       g.onClick();
                       this.started = g.title;
                     }
+                    this.forceUpdate();
                   }}>
             <i className={g.icon}></i>
           </button>
@@ -294,10 +311,11 @@ class Toolbar extends React.Component{
           <div key={i} className="mv-toolbar-separator"></div> :
           <button key={i} type="button" title={item.title}
                   disabled={!!item.disabled}
-                  className={"mv-toolbar-btn " + (item.active ? "active" : "")}
+                  className={"mv-toolbar-btn " + (item.active || inserting(item.title) ? "active" : "")}
                   onClick={() => {
-                    if (this.inserting && this.started === item.title && (viewer.inputHandler.drag || viewer.inputHandler.paused)) this.cancelInsertion();
+                    if (inserting(item.title)) this.cancelInsertion();
                     else{
+                      this.cancelInsertion();
                       item.onClick();
                       this.started = item.title;
                     }

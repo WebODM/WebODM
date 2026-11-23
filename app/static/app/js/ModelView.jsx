@@ -7,6 +7,7 @@ import Standby from './components/Standby';
 import ShareButton from './components/ShareButton';
 import ImagePopup from './components/ImagePopup';
 import Utils from './classes/Utils';
+import csrf from './django/csrf';
 import PropTypes from 'prop-types';
 import PluginsAPI from './classes/plugins/API';
 import update from 'immutability-helper';
@@ -75,6 +76,7 @@ class ModelView extends React.Component {
       pluginActionButtons: [],
       viewer: null,
       panel: null,
+      smallScreen: false,
       vr: false,
       inserted: null,
       focused: null
@@ -90,9 +92,11 @@ class ModelView extends React.Component {
     this.historyIndex = 0;
 
     this.prevSceneData = null;
-    this.saveSceneReq = null;
-    this.saveSceneInterval = null;
+    this.saveSceneAbort = null;
+    this.saveSceneTimeout = null;
     this.saveSceneErrors = 0;
+    this.activity = 0;
+    this.pendingSceneData = null;
 
     this.pointCloud = null;
     this.modelReference = null;
@@ -287,7 +291,8 @@ class ModelView extends React.Component {
     viewer.vrControls = new VRControls(viewer, {
       modelTypes: [
         {type: "cloud", label: _("Point Cloud")},
-        ...(this.hasTexturedModel() ? [{type: "mesh", label: _("Textured Model")}] : [])
+        ...(this.hasTexturedModel() ? [{type: "mesh", label: _("Textured Model")}] : []),
+        ...(this.hasSplats() ? [{type: "splats", label: _("Splats")}] : [])
       ],
       getModelType: this.getCurrentModelType,
       setModelType: this.setModelType,
@@ -295,6 +300,7 @@ class ModelView extends React.Component {
       redo: () => this.restoreHistory(this.historyIndex + 1),
       getLoading: () => {
         if (this.state.initializingModel) return {message: _("Loading textured model..."), progress: this.state.texModelLoadProgress};
+        if (this.state.initializingSplats) return {message: _("Loading splats..."), progress: this.state.splatsLoadProgress};
         return null;
       }
     });
@@ -312,10 +318,14 @@ class ModelView extends React.Component {
     viewer.loadSettingsFromURL();
 
     viewer.compass.dom.css({top: "12px", left: "12px", right: "", zIndex: 2, cursor: "pointer"});
-    viewer.compass.setVisible(this.settings.compass !== false);
+    this.smallScreen = window.matchMedia("(max-width: 767px), (max-height: 479px)");
+    this.smallScreen.addEventListener("change", this.handleSmallScreen);
+    this.handleSmallScreen();
 
     onUnitSystemChanged(this.handleUnitSystemChanged);
     document.addEventListener("keydown", this.handleKeyDown);
+    document.addEventListener("visibilitychange", this.handlePageHide);
+    for (const type of ["pointerdown", "pointerup", "keydown", "keyup", "input", "change"]) window.addEventListener(type, this.handleActivity, true);
 
     Potree.VRButton.createButton(viewer.renderer).then(vrButton => {
         if (!vrButton) return;
@@ -421,33 +431,21 @@ class ModelView extends React.Component {
                 viewer.scene.annotations.descendants().forEach(a => { if (a.hasView()) a.visible = false; });
                 viewer.scene.cameraAnimations.forEach(a => a.setVisible(false));
                 viewer.removeEventListener("update", potreeLoadProject);
+                this.removeInvalidItems();
             };
             viewer.addEventListener("update", potreeLoadProject);
 
-            this.prevSceneData = JSON.stringify(this.getSceneData());
-
             // Give Potree a moment to load the saved scene before
-            // taking the first undo snapshot
+            // taking the first undo snapshot and the save baseline.
+            // Potree does not have reliable events for detecting changes,
+            // so after user activity we compare snapshots of the scene
             setTimeout(() => {
                 this.history = [{label: "", data: this.getHistoryData()}];
                 this.historyIndex = 0;
-                this.historyInterval = setInterval(this.recordHistory, 500);
+                this.prevSceneData = JSON.stringify(this.getSceneData());
+                this.sceneInterval = setInterval(this.checkScene, 500);
                 this.latLonInterval = setInterval(this.updateLatLon, 500);
             }, 1000);
-
-            // Every 3 seconds, check if the scene has changed
-            // if it has, save the changes server-side
-            // Unfortunately Potree does not have reliable events
-            // for trivially detecting changes in measurements
-            this.saveSceneInterval = setInterval(() => {
-                if (this.canEdit()) this.saveScene();
-
-                // Potree is a bit strange, sometimes fitToScreen does
-                // not work, so we check whether the camera position is still
-                // at zero and recall fitToScreen
-                const pos = viewer.scene.view.position;
-                if (pos.x === 0 && pos.y === 0 && pos.z === 0) viewer.fitToScreen();
-            }, 3000);
           }).fail(e => {
             console.error("Cannot load 3D scene information", e);
           }).always(() => {
@@ -459,14 +457,13 @@ class ModelView extends React.Component {
 
     this.highlight = new Highlight(viewer);
     this.reorient = new Reorient(viewer, this.applyReorientation);
-    viewer.roofTool = new Roofs(viewer, item => this.setState({panel: "project", inserted: item, focused: null}));
+    viewer.roofTool = new Roofs(viewer, this.handleInsert);
     viewer.renderer.domElement.addEventListener( 'mousedown', this.handleRenderMouseClick );
     viewer.renderer.domElement.addEventListener( 'mousedown', this.handleRenderMouseDownCapture, true );
     viewer.renderer.domElement.addEventListener( 'mouseup', this.handleRenderMouseUpCapture, true );
     viewer.renderArea.addEventListener( 'contextmenu', this.handleAnnotationContextMenu );
     viewer.renderer.domElement.addEventListener( 'dblclick', this.handleRenderDoubleClickCapture, true );
     viewer.renderer.domElement.addEventListener( 'mousemove', this.handleRenderMouseMove );
-    viewer.renderer.domElement.addEventListener( 'touchstart', this.handleRenderTouchStart );
     
     PluginsAPI.ModelView.triggerAddActionButton({
       viewer
@@ -527,6 +524,7 @@ class ModelView extends React.Component {
             m.latlon = {x: positions[i].x, y: positions[i].y, lat: result.coordinates[i][1], lon: result.coordinates[i][0]};
             m.update();
         });
+        this.handleActivity();
     }).fail(() => {
         stale.forEach(m => {
             m.display = "native";
@@ -537,8 +535,29 @@ class ModelView extends React.Component {
     });
   }
 
-  recordHistory = () => {
+  handleActivity = () => {
+    this.activity = performance.now();
+  }
+
+  checkScene = () => {
+    // Potree is a bit strange, sometimes fitToScreen does
+    // not work, so we check whether the camera position is still
+    // at zero and recall fitToScreen
+    const pos = viewer.scene.view.position;
+    if (pos.x === 0 && pos.y === 0 && pos.z === 0) viewer.fitToScreen();
+
+    if (!viewer.renderer.xr.isPresenting && performance.now() - this.activity > 2000) return;
     if (viewer.inputHandler.drag || viewer.vrControls.drag || viewer.scene.cameraAnimations.some(a => a.dragging) || this.reorient.active()) return;
+    if (this.removeInvalidItems()) return;
+
+    if (this.canEdit() && this.saveSceneErrors < 5){
+        const sceneData = JSON.stringify(this.getSceneData());
+        if (sceneData !== this.prevSceneData && sceneData !== this.pendingSceneData){
+            this.pendingSceneData = sceneData;
+            clearTimeout(this.saveSceneTimeout);
+            this.saveSceneTimeout = setTimeout(this.saveScene, 1000);
+        }
+    }
 
     const data = this.getHistoryData();
     const prevData = this.history[this.historyIndex].data;
@@ -593,6 +612,7 @@ class ModelView extends React.Component {
     scene.cameraAnimations.forEach(a => { if (hidden.indexOf(a.uuid) !== -1) a.setVisible(false); });
 
     this.historyIndex = index;
+    this.handleActivity();
     this.forceUpdate();
   }
 
@@ -614,31 +634,40 @@ class ModelView extends React.Component {
   }
 
   saveScene = () => {
-    if (this.prevSceneData === null) return;
+    clearTimeout(this.saveSceneTimeout);
+    const sceneData = this.pendingSceneData;
+    if (!sceneData) return;
+    this.pendingSceneData = null;
 
-    const sceneData = JSON.stringify(this.getSceneData());
-    if (sceneData === this.prevSceneData) return;
+    if (this.saveSceneAbort) this.saveSceneAbort.abort();
+    const abort = this.saveSceneAbort = new AbortController();
 
-    if (this.saveSceneReq) this.saveSceneReq.abort();
-
-    this.saveSceneReq = $.ajax({
-        url: `${this.basePath()}/3d/scene`,
-        contentType: 'application/json',
-        data: sceneData,
-        dataType: 'json',
-        type: 'POST'
-    }).done(result => {
-        if (result.success){
-            this.saveSceneErrors = 0;
-            this.prevSceneData = sceneData;
-        }else{
-            console.warn("Cannot save Potree scene");
-        }
-    }).fail((xhr, status) => {
-        if (status === "abort") return;
+    fetch(`${this.basePath()}/3d/scene`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json", [csrf.header]: csrf.token},
+        body: sceneData,
+        credentials: "same-origin",
+        keepalive: sceneData.length < 60000,
+        signal: abort.signal
+    }).then(response => response.json()).then(result => {
+        if (!result.success) throw new Error();
+        this.saveSceneErrors = 0;
+        this.prevSceneData = sceneData;
+    }).catch(() => {
+        if (abort.signal.aborted) return;
         console.error("Cannot save Potree scene");
-        if (++this.saveSceneErrors === 5) clearInterval(this.saveSceneInterval);
+        this.saveSceneErrors++;
     });
+  }
+
+  handlePageHide = () => {
+    if (document.visibilityState !== "hidden" || !this.canEdit() || this.prevSceneData === null) return;
+
+    if (!this.removeInvalidItems()){
+        const sceneData = JSON.stringify(this.getSceneData());
+        if (sceneData !== this.prevSceneData) this.pendingSceneData = sceneData;
+    }
+    this.saveScene();
   }
 
   setInitialCameraView = (cb, view) => {
@@ -676,7 +705,7 @@ class ModelView extends React.Component {
     else if (key === "hq"){
         if (this.getCurrentModelType() === "cloud") viewer.useHQ = value;
     }
-    else if (key === "compass") viewer.compass.setVisible(value);
+    else if (key === "compass") viewer.compass.setVisible(value && !this.smallScreen.matches);
     else if (key === "smoothness"){
         const factor = {smooth: 0.5, standard: 1, snappy: 2.5}[value] || 1;
         viewer.orbitControls.fadeFactor = 20 * factor;
@@ -699,6 +728,15 @@ class ModelView extends React.Component {
     localStorage.removeItem("modelview_settings");
     setUnitSystem("metric");
     this.forceUpdate();
+  }
+
+  handleInsert = (item) => {
+    if (!Utils.isMobile()) this.setState({panel: "project", inserted: item, focused: null});
+  }
+
+  handleSmallScreen = () => {
+    viewer.compass.setVisible(this.settings.compass !== false && !this.smallScreen.matches);
+    this.setState({smallScreen: this.smallScreen.matches});
   }
 
   togglePanel = (panel) => {
@@ -740,10 +778,13 @@ class ModelView extends React.Component {
 
   componentWillUnmount(){
     offUnitSystemChanged(this.handleUnitSystemChanged);
-    clearInterval(this.saveSceneInterval);
-    clearInterval(this.historyInterval);
+    clearTimeout(this.saveSceneTimeout);
+    clearInterval(this.sceneInterval);
+    document.removeEventListener("visibilitychange", this.handlePageHide);
+    for (const type of ["pointerdown", "pointerup", "keydown", "keyup", "input", "change"]) window.removeEventListener(type, this.handleActivity, true);
     clearInterval(this.latLonInterval);
     document.removeEventListener("keydown", this.handleKeyDown);
+    this.smallScreen.removeEventListener("change", this.handleSmallScreen);
     viewer.roofTool.dispose();
     this.highlight.dispose();
     this.reorient.dispose();
@@ -753,7 +794,6 @@ class ModelView extends React.Component {
     viewer.renderArea.removeEventListener( 'contextmenu', this.handleAnnotationContextMenu );
     viewer.renderer.domElement.removeEventListener( 'dblclick', this.handleRenderDoubleClickCapture, true );
     viewer.renderer.domElement.removeEventListener( 'mousemove', this.handleRenderMouseMove );
-    viewer.renderer.domElement.removeEventListener( 'touchstart', this.handleRenderTouchStart );
     
   }
 
@@ -800,17 +840,33 @@ class ModelView extends React.Component {
     this._prevCamera = camera;
   }
 
-  handleRenderTouchStart = (evt) => {
-    if (evt.touches.length === 1){
-        this.handleRenderMouseClick({clientX: evt.touches[0].clientX, clientY: evt.touches[0].clientY});
-    }
-  }
-
   handleRenderMouseDownCapture = () => {
     this.placingOnMouseDown = !!viewer.inputHandler.drag;
   }
 
+  removeInvalidItems = () => {
+    const handler = viewer.inputHandler;
+    const held = [handler.drag && handler.drag.object, handler.paused];
+    const vr = viewer.vrControls.drag;
+    const busy = item => (item.spheres || item.markers).some(s => held.indexOf(s) !== -1) || (!!vr && vr.measurement === item);
+    let inserting = !!vr && !!vr.creating;
+    for (const m of [...viewer.scene.measurements]){
+      if (busy(m)) inserting = true;
+      else if (m.points.length < (m.showCoordinates ? 1 : m.closed || m.showCircle ? 3 : 2)) viewer.scene.removeMeasurement(m);
+    }
+    for (const p of [...viewer.scene.profiles]){
+      if (busy(p)) inserting = true;
+      else if (p.points.length < 2) viewer.scene.removeProfile(p);
+    }
+    for (const c of [...viewer.scene.polygonClipVolumes]){
+      if (busy(c)) inserting = true;
+      else if (c.markers.length < 3) viewer.scene.removePolygonClipVolume(c);
+    }
+    return inserting;
+  }
+
   handleRenderMouseUpCapture = (evt) => {
+    setTimeout(this.removeInvalidItems, 0);
     if (evt.button !== 2 || this.placingOnMouseDown || viewer.inputHandler.getNormalizedDrag().length() !== 0) return;
 
     const hovered = viewer.inputHandler.hoveredElements.map(h => h.object);
@@ -937,6 +993,14 @@ class ModelView extends React.Component {
     viewer.setEDLOpacity(flag ? 1 : 0);
     viewer.useHQ = flag && !!this.settings.hq;
 
+    if (flag && this.savedPointBudget){
+        viewer.setPointBudget(this.savedPointBudget);
+        this.savedPointBudget = null;
+    }else if (!flag && !this.savedPointBudget){
+        this.savedPointBudget = viewer.getPointBudget();
+        viewer.setPointBudget(Math.min(this.savedPointBudget, 500000));
+    }
+
     // On mobile, for performance and because opacity doesn't
     // seem to work consistently, we remove the ability to do
     // measurements
@@ -1025,8 +1089,9 @@ class ModelView extends React.Component {
   }
 
   initSplatsRenderer = () => {
-    this.sparkRenderer = new THREEdgs.SparkRenderer({renderer: viewer.renderer});
+    this.sparkRenderer = new THREEdgs.SparkRenderer({renderer: viewer.renderer, lodSplatCount: /OculusBrowser/.test(navigator.userAgent) ? 2000000 : undefined});
     viewer.scene.scene.add(this.sparkRenderer);
+    viewer.splatsRenderer = this.sparkRenderer;
   }
 
   setSplatsVisible = (flag) => {
@@ -1252,7 +1317,7 @@ class ModelView extends React.Component {
                                         camerasVisible={this.state.camerasVisible}
                                         onToggleCameras={this.toggleCameras}
                                         onAttributeChange={() => this.forceUpdate()}
-                                        onInsert={item => this.setState({panel: "project", inserted: item, focused: null})}
+                                        onInsert={this.handleInsert}
                                         onReorient={this.props.task.epsg || this.props.task.wkt ? null : measure => this.reorient.start(measure)}
                                         onEnterVR={this.state.vr ? () => this.vrButton.element.click() : null} /> : ""}
 
@@ -1293,7 +1358,7 @@ class ModelView extends React.Component {
 
                     {viewer && this.settings.gizmo === true ? <Gizmo viewer={viewer} shifted={panel === "project" || panel === "history"} /> : ""}
 
-                    {viewer && this.settings.minimap !== false ? <Minimap viewer={viewer} /> : ""}
+                    {viewer && this.settings.minimap !== false && !this.state.smallScreen ? <Minimap viewer={viewer} /> : ""}
 
                     {viewer && this.settings.magnifier !== false ? <Magnifier viewer={viewer} /> : ""}
 

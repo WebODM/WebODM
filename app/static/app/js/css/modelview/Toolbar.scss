@@ -52,8 +52,10 @@
         font-size: 20px;
         line-height: 20px;
 
-        &:hover{
-            background: rgba(255, 255, 255, 0.15);
+        @media (hover: hover){
+            &:hover{
+                background: rgba(255, 255, 255, 0.15);
+            }
         }
         &.active{
             background: #6f8a95;

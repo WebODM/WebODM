@@ -81156,20 +81156,19 @@ ENDSEC
 		}
 
 		onTouchStart (e) {
-			if (this.logMessages) console.log(this.constructor.name + ': onTouchStart');
-
 			e.preventDefault();
 
-			if (e.touches.length === 1) {
-				let rect = this.domElement.getBoundingClientRect();
-				let x = e.touches[0].pageX - rect.left;
-				let y = e.touches[0].pageY - rect.top;
-				this.mouse.set(x, y);
+			this.touchMouse = e.touches.length === 1;
 
-				this.startDragging(null);
+			if (this.touchMouse) {
+				const {clientX, clientY} = e.touches[0];
+				this.touchStart = {clientX, clientY, time: e.timeStamp, moved: false};
+				this.domElement.dispatchEvent(new MouseEvent('mousemove', {clientX, clientY, bubbles: true}));
+				this.domElement.dispatchEvent(new MouseEvent('mousedown', {clientX, clientY, button: 0, buttons: 1, bubbles: true}));
+			} else if (this.drag && !this.drag.object) {
+				this.drag = null;
 			}
 
-			
 			for (let inputListener of this.getSortedListeners()) {
 				inputListener.dispatchEvent({
 					type: e.type,
@@ -81180,19 +81179,14 @@ ENDSEC
 		}
 
 		onTouchEnd (e) {
-			if (this.logMessages) console.log(this.constructor.name + ': onTouchEnd');
-
 			e.preventDefault();
 
-			for (let inputListener of this.getSortedListeners()) {
-				inputListener.dispatchEvent({
-					type: 'drop',
-					drag: this.drag,
-					viewer: this.viewer
-				});
+			if (this.touchMouse && e.touches.length === 0) {
+				const {clientX, clientY} = e.changedTouches[0];
+				const hold = !this.touchStart.moved && e.timeStamp - this.touchStart.time >= 600;
+				this.domElement.dispatchEvent(new MouseEvent('mouseup', {clientX, clientY, button: hold ? 2 : 0, bubbles: true}));
 			}
-
-			this.drag = null;
+			this.touchMouse = false;
 
 			for (let inputListener of this.getSortedListeners()) {
 				inputListener.dispatchEvent({
@@ -81204,33 +81198,12 @@ ENDSEC
 		}
 
 		onTouchMove (e) {
-			if (this.logMessages) console.log(this.constructor.name + ': onTouchMove');
-
 			e.preventDefault();
 
-			if (e.touches.length === 1) {
-				let rect = this.domElement.getBoundingClientRect();
-				let x = e.touches[0].pageX - rect.left;
-				let y = e.touches[0].pageY - rect.top;
-				this.mouse.set(x, y);
-
-				if (this.drag) {
-					this.drag.mouse = 1;
-
-					this.drag.lastDrag.x = x - this.drag.end.x;
-					this.drag.lastDrag.y = y - this.drag.end.y;
-
-					this.drag.end.set(x, y);
-
-					if (this.logMessages) console.log(this.constructor.name + ': drag: ');
-					for (let inputListener of this.getSortedListeners()) {
-						inputListener.dispatchEvent({
-							type: 'drag',
-							drag: this.drag,
-							viewer: this.viewer
-						});
-					}
-				}
+			if (this.touchMouse) {
+				const {clientX, clientY} = e.touches[0];
+				if (Math.hypot(clientX - this.touchStart.clientX, clientY - this.touchStart.clientY) > 10) this.touchStart.moved = true;
+				this.domElement.dispatchEvent(new MouseEvent('mousemove', {clientX, clientY, buttons: 1, bubbles: true}));
 			}
 
 			for (let inputListener of this.getSortedListeners()) {
@@ -81240,18 +81213,6 @@ ENDSEC
 					changedTouches: e.changedTouches
 				});
 			}
-
-			// DEBUG CODE
-			// let debugTouches = [...e.touches, {
-			//	pageX: this.domElement.clientWidth / 2,
-			//	pageY: this.domElement.clientHeight / 2}];
-			// for(let inputListener of this.getSortedListeners()){
-			//	inputListener.dispatchEvent({
-			//		type: e.type,
-			//		touches: debugTouches,
-			//		changedTouches: e.changedTouches
-			//	});
-			// }
 		}
 
 		onKeyDown (e) {
@@ -82024,7 +81985,7 @@ ENDSEC
 					let currDY = curr.touches[0].pageY - curr.touches[1].pageY;
 					let currDist = Math.sqrt(currDX * currDX + currDY * currDY);
 
-					let delta = currDist / prevDist;
+					let delta = Math.pow(currDist / prevDist, 3);
 					let resolvedRadius = this.scene.view.radius + this.radiusDelta;
 					let newRadius = resolvedRadius / delta;
 					this.radiusDelta = newRadius - resolvedRadius;
@@ -82041,8 +82002,8 @@ ENDSEC
 					let currMeanY = (curr.touches[0].pageY + curr.touches[1].pageY + curr.touches[2].pageY) / 3;
 
 					let delta = {
-						x: (currMeanX - prevMeanX) / this.renderer.domElement.clientWidth,
-						y: (currMeanY - prevMeanY) / this.renderer.domElement.clientHeight
+						x: (currMeanX - prevMeanX) / this.renderer.domElement.clientWidth / 2,
+						y: (currMeanY - prevMeanY) / this.renderer.domElement.clientHeight / 2
 					};
 
 					this.panDelta.x += delta.x;
@@ -89259,7 +89220,9 @@ ENDSEC
 			const camera = scene.getActiveCamera();
 			const visiblePointClouds = this.scene.pointclouds.filter(pc => pc.visible);
 			
-			Potree.pointLoadLimit = Potree.pointBudget * 2;
+			const pointBudget = Potree.pointBudget;
+			const activeBudget = this.renderer.xr.isPresenting && this.vrControls ? this.vrControls.pointBudget : pointBudget;
+			Potree.pointLoadLimit = activeBudget * 2;
 
 			const lTarget = camera.position.clone().add(camera.getWorldDirection(new Vector3()).multiplyScalar(1000));
 			this.scene.directionalLight.position.copy(camera.position);
@@ -89308,7 +89271,9 @@ ENDSEC
 			}
 
 			if (!this.freeze) {
+				Potree.pointBudget = activeBudget;
 				let result = Potree.updatePointClouds(scene.pointclouds, camera, this.renderer);
+				Potree.pointBudget = pointBudget;
 
 
 				// DEBUG - ONLY DISPLAY NODES THAT INTERSECT MOUSE
@@ -89633,20 +89598,53 @@ ENDSEC
 				cam.updateMatrixWorld();
 
 				view = cam.matrixWorld.clone().invert();
-				this.scene.scene.matrixAutoUpdate = false;
-				this.scene.scene.matrix.copy(view);
-				this.scene.scene.matrixWorld.copy(view);
-				this.scene.scene.updateMatrixWorld(true);
 
+				const rig = cam.matrixWorld.clone();
 				cam.matrix.identity();
 				cam.matrixWorld.identity();
 				cam.matrixWorldInverse.identity();
 
+				const eyes = [xrCameras, ...xrCameras.cameras];
+				const poses = eyes.map(eye => [eye.matrix.clone(), eye.projectionMatrix.clone()]);
+				for(const eye of eyes){
+					eye.matrix.premultiply(rig).decompose(eye.position, eye.quaternion, eye.scale);
+					eye.scale.set(1, 1, 1);
+					eye.matrix.compose(eye.position, eye.quaternion, eye.scale);
+					eye.matrixWorld.copy(eye.matrix);
+					eye.matrixWorldInverse.copy(eye.matrix).invert();
+					eye.projectionMatrix.elements[14] *= this.vrControls.scale;
+				}
+
+				const splats = this.splatsRenderer && this.splatsRenderer.visible ? this.splatsRenderer : null;
+				const getDrawingBufferSize = renderer.getDrawingBufferSize;
+				const lodSplatCount = splats && splats.lodSplatCount;
+				const maxStdDev = splats && splats.maxStdDev;
+				renderer.xr.getSession().renderState.baseLayer.fixedFoveation = splats ? 1 : 0;
+				if(splats){
+					splats.lodSplatCount = this.vrControls.splatBudget;
+					splats.maxStdDev = Math.sqrt(5);
+					const viewport = xrCameras.cameras[0].viewport;
+					renderer.getDrawingBufferSize = target => target.set(viewport.z, viewport.w);
+					splats.autoUpdate = false;
+					splats.update({scene: this.scene.scene, camera: xrCameras.cameras[0]});
+					renderer.getContext().bindFramebuffer(36160, renderer.xr.getSession().renderState.baseLayer.framebuffer);
+				}
+
 				renderer.render(this.scene.scene, cam);
 
-				this.scene.scene.matrix.identity();
-				this.scene.scene.matrixWorld.identity();
-				this.scene.scene.updateMatrixWorld(true);
+				if(splats){
+					renderer.getDrawingBufferSize = getDrawingBufferSize;
+					splats.autoUpdate = true;
+					splats.lodSplatCount = lodSplatCount;
+					splats.maxStdDev = maxStdDev;
+				}
+
+				eyes.forEach((eye, i) => {
+					eye.matrix.copy(poses[i][0]);
+					eye.matrixWorld.copy(poses[i][0]);
+					eye.matrixWorldInverse.copy(poses[i][0]).invert();
+					eye.projectionMatrix.copy(poses[i][1]);
+				});
 
 
 			}
