@@ -539,7 +539,7 @@ class VRControls{
       return true;
     }
     const at = hand.pinch.clone().applyMatrix4(this.rig);
-    const near = this.nearestEdge(at) || this.fingerTarget(hand).nearest;
+    const near = this.nearestEdge(at) || (this.deleting ? this.fingerTarget(hand).nearest : null);
     if (this.deleting){
       if (!near) return false;
       if (near instanceof Potree.Profile) viewer.scene.removeProfile(near);
@@ -575,10 +575,10 @@ class VRControls{
   sample(drag, position){
     const time = performance.now();
     if (!drag.samples) drag.samples = [];
-    if (time - (drag.sampled || 0) < 250) return;
+    if (time - (drag.sampled || 0) < 25) return;
     drag.sampled = time;
     drag.samples.push(position.clone());
-    if (drag.samples.length > 4) drag.samples.shift();
+    if (drag.samples.length > 8) drag.samples.shift();
   }
 
   settle(drag){
@@ -592,10 +592,54 @@ class VRControls{
     return true;
   }
 
+  snap(measurement, index){
+    const point = measurement.points[index];
+    const at = point.position || point;
+    const local = new THREE.Matrix4();
+    const l = new THREE.Vector3();
+    let best = null;
+    let bestD = Infinity;
+
+    for (const pointcloud of this.viewer.scene.pointclouds){
+      if (!pointcloud.visible || !pointcloud.root || !pointcloud.root.sceneNode) continue;
+      const stack = [pointcloud.root];
+      while (stack.length){
+        const node = stack.pop();
+        if (!node.sceneNode) continue;
+        const world = node.sceneNode.matrixWorld;
+        const k = world.getMaxScaleOnAxis();
+        l.copy(at).applyMatrix4(local.copy(world).invert());
+        const size = node.geometryNode.boundingBox.getSize(new THREE.Vector3());
+        if (Math.hypot(Math.max(-l.x, 0, l.x - size.x), Math.max(-l.y, 0, l.y - size.y), Math.max(-l.z, 0, l.z - size.z)) * k >= bestD) continue;
+
+        for (const child of node.children) if (child && child.sceneNode) stack.push(child);
+
+        const position = node.sceneNode.geometry.attributes.position;
+        if (!position) continue;
+        const p = position.array;
+        let found = -1;
+        let foundD = bestD / k * (bestD / k);
+        for (let i = 0; i < p.length; i += 3){
+          const dx = p[i] - l.x, dy = p[i + 1] - l.y, dz = p[i + 2] - l.z;
+          const d = dx * dx + dy * dy + dz * dz;
+          if (d < foundD){
+            found = i;
+            foundD = d;
+          }
+        }
+        if (found === -1) continue;
+        bestD = Math.sqrt(foundD) * k;
+        best = new THREE.Vector3(p[found], p[found + 1], p[found + 2]).applyMatrix4(world);
+      }
+    }
+    if (best) measurement.setPosition(index, best);
+  }
+
   releaseDirect(hand){
     const drag = this.drag;
     if (!drag || !drag.direct || !drag.held) return;
     if (!this.settle(drag) && drag.stable) drag.measurement.setPosition(drag.index, drag.stable.clone().applyMatrix4(this.rig));
+    this.snap(drag.measurement, drag.index);
     if (drag.creating){
       drag.held = false;
       const measurement = drag.measurement;
@@ -866,7 +910,7 @@ class VRControls{
           this.pull[side] = "done";
         }else if (direct && this.directPinch(hand)) this.pull[side] = "direct";
         else{
-          const free = open && !busy && !(this.measureMode === "measure" && !direct && this.aimed(hand));
+          const free = open && !creating && !(this.measureMode === "measure" && !direct && this.aimed(hand));
           this.pull[side] = free ? (side === "right" && this.mode === "walk" && !this.pull[other] ? "pending" : "pull") : false;
         }
         if (this.pull[side]) this.pullStart[side] = {at: hand.ray.position.clone(), time: clock};
@@ -1161,7 +1205,10 @@ class VRControls{
     for (const measurement of this.editing) if (!measuring || !measurement.visible || !measurements.includes(measurement)) this.editing.delete(measurement);
     if (this.drag && this.drag.creating && !this.editing.has(this.drag.measurement)) this.cancelCreation();
     if (this.drag && !this.drag.creating && !this.drag.direct && (this.drag.hand !== laserHand || !holding || !this.editing.has(this.drag.measurement))){
-      if (this.editing.has(this.drag.measurement)) this.settle(this.drag);
+      if (this.editing.has(this.drag.measurement) && this.drag.moved){
+        this.settle(this.drag);
+        this.snap(this.drag.measurement, this.drag.index);
+      }
       this.drag.measurement.dispatchEvent({type: "marker_dropped", [this.drag.measurement instanceof Potree.Profile ? "profile" : "measurement"]: this.drag.measurement, index: this.drag.index});
       buzz(this.drag.hand);
       this.drag = null;
@@ -1284,6 +1331,7 @@ class VRControls{
     else if (edge && this.drag && this.drag.creating){
       this.drag.adder = laserHand;
       const measurement = this.drag.measurement;
+      this.snap(measurement, this.drag.index);
       if (measurement.points.length >= measurement.maxMarkers) this.drag = null;
       else{
         measurement.addMarker(measurement.points[measurement.points.length - 1].position.clone());
@@ -1372,6 +1420,7 @@ class VRControls{
       this.measureMode = "measure";
     }else if (activated && activated.group === "tool" && !same){
       this.deleting = false;
+      if (!tabletop && right && right.tracked) this.editHand = "right";
       const args = activated.args;
       const measurement = new Potree.Measure();
       measurement.showDistances = args.showDistances === null ? true : args.showDistances;
@@ -1398,6 +1447,8 @@ class VRControls{
       setUnitSystem(activated.key);
     }else if (activated && activated.group === "mode" && activated.key !== this.mode){
       this.mode = activated.key;
+      this.cancelCreation();
+      this.deleting = false;
       this.scale = 1;
       this.velocity.set(0, 0, 0);
       this.grounded = false;
