@@ -43,10 +43,19 @@ class Minimap extends React.Component{
     const width = this.canvas.width;
     const height = this.canvas.height;
     const box = pc.pcoGeometry.tightBoundingBox || pc.boundingBox;
-    const minX = box.min.x + pc.position.x;
-    const maxY = box.max.y + pc.position.y;
-    const sizeX = box.max.x - box.min.x;
-    const sizeY = box.max.y - box.min.y;
+    const crop = pc.material.cropVertices && pc.material.cropVertices.length >= 3 ? pc.material.cropVertices : null;
+    let minX = box.min.x + pc.position.x;
+    let maxX = box.max.x + pc.position.x;
+    let minY = box.min.y + pc.position.y;
+    let maxY = box.max.y + pc.position.y;
+    if (crop){
+      minX = Math.max(minX, Math.min(...crop.map(v => v.x)));
+      maxX = Math.min(maxX, Math.max(...crop.map(v => v.x)));
+      minY = Math.max(minY, Math.min(...crop.map(v => v.y)));
+      maxY = Math.min(maxY, Math.max(...crop.map(v => v.y)));
+    }
+    const sizeX = maxX - minX;
+    const sizeY = maxY - minY;
     const scale = Math.min(width / sizeX, height / sizeY) * 0.9;
     const offsetX = (width - sizeX * scale) / 2;
     const offsetY = (height - sizeY * scale) / 2;
@@ -67,8 +76,17 @@ class Minimap extends React.Component{
       const m = node.sceneNode.matrixWorld.elements;
 
       for (let i = 0, c = 0; i < positions.length; i += 3, c += 4){
-        const px = Math.floor(offsetX + (positions[i] + m[12] - minX) * scale);
-        const py = Math.floor(offsetY + (maxY - positions[i + 1] - m[13]) * scale);
+        const wx = positions[i] + m[12];
+        const wy = positions[i + 1] + m[13];
+        if (crop){
+          let inside = false;
+          for (let a = 0, b = crop.length - 1; a < crop.length; b = a++){
+            if ((crop[a].y > wy) !== (crop[b].y > wy) && wx < (crop[b].x - crop[a].x) * (wy - crop[a].y) / (crop[b].y - crop[a].y) + crop[a].x) inside = !inside;
+          }
+          if (!inside) continue;
+        }
+        const px = Math.floor(offsetX + (wx - minX) * scale);
+        const py = Math.floor(offsetY + (maxY - wy) * scale);
         const z = positions[i + 2] + m[14];
 
         for (let dy = 0; dy < dot; dy++){
