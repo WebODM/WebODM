@@ -103,6 +103,8 @@ class VRControls{
     this.hover = null;
     this.hits = new Set();
     this.editing = new Set();
+    this.shown = new Set();
+    this.pinched = null;
     this.deleting = false;
     this.hit = null;
     this.pinch = null;
@@ -540,17 +542,10 @@ class VRControls{
     }
     const at = hand.pinch.clone().applyMatrix4(this.rig);
     const near = this.nearestEdge(at) || (this.deleting ? this.fingerTarget(hand).nearest : null);
-    if (this.deleting){
-      if (!near) return false;
-      if (near instanceof Potree.Profile) viewer.scene.removeProfile(near);
-      else viewer.scene.removeMeasurement(near);
-      this.editing.delete(near);
-      return true;
-    }
     const s = this.scale;
     const h = 5 * 2 / 3 / s, w = 1.875 / s;
     let best = null, bestD = w / 2 + 0.015;
-    for (const measurement of this.editing){
+    for (const measurement of this.shown){
       measurement.points.forEach((point, index) => {
         const tip = (point.position || point).clone().applyMatrix4(this.rigInverse);
         tip.y += Math.min(h, Math.max(0, hand.pinch.y - tip.y));
@@ -561,6 +556,15 @@ class VRControls{
         }
       });
     }
+    if (this.deleting){
+      if (best) this.removePin(best.measurement, best.index);
+      else if (near){
+        if (near instanceof Potree.Profile) viewer.scene.removeProfile(near);
+        else viewer.scene.removeMeasurement(near);
+        this.editing.delete(near);
+      }
+      return !!best || !!near;
+    }
     if (best){
       this.drag = {hand, measurement: best.measurement, index: best.index, direct: true, held: true, moved: true, closed: hand.gap, stable: null, samples: [], sampled: 0};
       return true;
@@ -570,6 +574,16 @@ class VRControls{
       return true;
     }
     return false;
+  }
+
+  removePin(measurement, index){
+    const profile = measurement instanceof Potree.Profile;
+    measurement.removeMarker(index);
+    if (measurement.points.length >= (profile ? 2 : measurement.showCoordinates ? 1 : measurement.closed || measurement.showCircle ? 3 : 2)) return false;
+    if (profile) this.viewer.scene.removeProfile(measurement);
+    else this.viewer.scene.removeMeasurement(measurement);
+    this.editing.delete(measurement);
+    return true;
   }
 
   sample(drag, position){
@@ -676,7 +690,7 @@ class VRControls{
     const tabletop = this.mode === "tabletop";
     const h = (tabletop ? 5 : 1) * 2 / 3 / s, w = (tabletop ? 1.875 : 0.3) / s;
     const rayDirection = new THREE.Vector3(0, 0, -1).applyQuaternion(hand.ray.quaternion);
-    for (const measurement of this.editing){
+    for (const measurement of this.shown){
       for (const point of measurement.points){
         const a = (point.position || point).clone().applyMatrix4(this.rigInverse).sub(hand.ray.position);
         const ud = h * rayDirection.y, denominator = h * h - ud * ud;
@@ -1275,7 +1289,14 @@ class VRControls{
     const rayDirection = laserHand && new THREE.Vector3(0, 0, -1).applyQuaternion(laserHand.ray.quaternion);
     const h = (tabletop ? 5 : 1) * 2 / 3 / s, w = (tabletop ? 1.875 : 0.3) / s;
     const unaimed = this.drag && this.drag.creating && !this.drag.aimed ? this.drag.measurement : null;
-    for (const measurement of this.editing){
+    const shown = new Set(this.editing);
+    if (this.deleting){
+      for (const measurement of [...this.labeled, this.hover && this.hover.measurement, this.pinched]){
+        if (measurement && measurement.visible && measurements.includes(measurement)) shown.add(measurement);
+      }
+    }
+    let pinched = null;
+    for (const measurement of shown){
       if (measurement === unaimed) continue;
       measurement.points.forEach((point, index) => {
         if (pins === this.pins.children.length) this.pins.add(new THREE.Mesh(this.pinGeometry, this.pinMaterial));
@@ -1291,7 +1312,10 @@ class VRControls{
             if (!hand || !hand.tracked || !hand.pinch) continue;
             const top = tip.clone();
             top.y += Math.min(h, Math.max(0, hand.pinch.y - tip.y));
-            if (hand.pinch.distanceTo(top) < w / 2 + 0.015) highlight = pin;
+            if (hand.pinch.distanceTo(top) < w / 2 + 0.015){
+              highlight = pin;
+              pinched = measurement;
+            }
           }
         }
         if (laserHand && !this.drag){
@@ -1309,6 +1333,8 @@ class VRControls{
       });
     }
     for (let i = pins; i < this.pins.children.length; i++) this.pins.children[i].visible = false;
+    this.shown = shown;
+    this.pinched = pinched;
     let dots = 0;
     if (measuring){
       for (const measurement of viewer.scene.measurements){
@@ -1339,7 +1365,10 @@ class VRControls{
       }
       buzz(laserHand);
     }else if (edge && this.deleting){
-      if (first){
+      if (pinHover){
+        if (this.removePin(pinHover.measurement, pinHover.index)) hits.delete(pinHover.measurement);
+        buzz(laserHand);
+      }else if (first){
         if (first instanceof Potree.Profile) viewer.scene.removeProfile(first);
         else viewer.scene.removeMeasurement(first);
         this.editing.delete(first);
