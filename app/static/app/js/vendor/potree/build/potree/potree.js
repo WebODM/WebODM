@@ -64913,7 +64913,7 @@ void main() {
 
 		const data = {
 			type: "Potree",
-			version: 1.7,
+			version: 2.0,
 			settings: createSettingsData(viewer),
 			view: createViewData(viewer),
 			classification: createClassificationData(viewer),
