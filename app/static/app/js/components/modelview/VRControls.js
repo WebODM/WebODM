@@ -2,6 +2,7 @@ import * as THREE from 'THREE';
 import { _ } from '../../classes/gettext';
 import { systems, getUnitSystem, setUnitSystem } from '../../classes/Units';
 import HandVisual from './HandVisual';
+import { smoke } from './Smoke';
 
 const SLIDE_SPEED = 3;
 const COMFORT_ASSIST = 0.5;
@@ -559,6 +560,7 @@ class VRControls{
     if (this.deleting){
       if (best) this.removePin(best.measurement, best.index);
       else if (near){
+        smoke(viewer, near, undefined, 3, 5 * 2 / 3);
         if (near instanceof Potree.Profile) viewer.scene.removeProfile(near);
         else viewer.scene.removeMeasurement(near);
         this.editing.delete(near);
@@ -578,8 +580,11 @@ class VRControls{
 
   removePin(measurement, index){
     const profile = measurement instanceof Potree.Profile;
+    const tabletop = this.mode === "tabletop";
+    const last = measurement.points.length <= (profile ? 2 : measurement.showCoordinates ? 1 : measurement.closed || measurement.showCircle ? 3 : 2);
+    smoke(this.viewer, measurement, last ? undefined : index, tabletop ? 3 : 0.5, (tabletop ? 5 : 1) * 2 / 3);
     measurement.removeMarker(index);
-    if (measurement.points.length >= (profile ? 2 : measurement.showCoordinates ? 1 : measurement.closed || measurement.showCircle ? 3 : 2)) return false;
+    if (!last) return false;
     if (profile) this.viewer.scene.removeProfile(measurement);
     else this.viewer.scene.removeMeasurement(measurement);
     this.editing.delete(measurement);
@@ -1369,6 +1374,7 @@ class VRControls{
         if (this.removePin(pinHover.measurement, pinHover.index)) hits.delete(pinHover.measurement);
         buzz(laserHand);
       }else if (first){
+        smoke(viewer, first, undefined, tabletop ? 3 : 0.5, (tabletop ? 5 : 1) * 2 / 3);
         if (first instanceof Potree.Profile) viewer.scene.removeProfile(first);
         else viewer.scene.removeMeasurement(first);
         this.editing.delete(first);
