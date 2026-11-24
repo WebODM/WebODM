@@ -42,6 +42,7 @@ class SharePopup extends React.Component{
       error: "",
       showQR: false,
       showVR: false,
+      vrLinkCopied: false,
       linkControls: [], // coming from plugins,
       relShareLink: "",
       localLinkAlertDismissed: !!Storage.getItem("local_link_alert_dismissed")
@@ -65,6 +66,10 @@ class SharePopup extends React.Component{
       url += Utils.toSearchQuery(this.props.queryParams);
     }
     return url;
+  }
+
+  componentWillUnmount(){
+    clearTimeout(this.vrLinkTimeout);
   }
 
   componentDidMount(){
@@ -180,6 +185,9 @@ class SharePopup extends React.Component{
 
   render(){
     const shareLink = Utils.absoluteUrl(this.getRelShareLink());
+    const vrUrl = new URL(shareLink);
+    vrUrl.searchParams.set("autovr", "1");
+    const vrLink = vrUrl.toString();
     const iframeUrl = Utils.absoluteUrl(this.getRelShareLink({iframe: true}));
     const iframeCode = `<iframe scrolling="no" title="WebODM" width="61.8033%" height="360" frameBorder="0" src="${iframeUrl}"></iframe>`;
     const isPublic = this.getObjProp('public');
@@ -290,12 +298,31 @@ class SharePopup extends React.Component{
             {this.state.showVR ?
             <div>
               <button type="button" className="btn btn-primary btn-block"
-                      onClick={() => {
-                        const url = new URL(shareLink);
-                        url.searchParams.set("autovr", "1");
-                        window.open(`https://www.oculus.com/open_url/?url=${encodeURIComponent(url.toString())}`, "_blank");
-                      }}>
+                      onClick={() => window.open(`https://www.oculus.com/open_url/?url=${encodeURIComponent(vrLink)}`, "_blank")}>
                 <i className="fa fa-vr-cardboard"></i> {_("Open in Meta Quest")}
+              </button>
+              <button type="button" className="btn btn-default btn-block"
+                      onClick={() => {
+                        if (navigator.clipboard !== undefined){
+                          navigator.clipboard.writeText(vrLink);
+                        }else{
+                          const el = document.createElement('textarea');
+                          el.value = vrLink;
+                          el.style.position = 'fixed';
+                          el.style.opacity = '0';
+                          document.body.appendChild(el);
+                          el.select();
+                          try{
+                            document.execCommand('copy');
+                          }finally{
+                            document.body.removeChild(el);
+                          }
+                        }
+                        this.setState({vrLinkCopied: true});
+                        clearTimeout(this.vrLinkTimeout);
+                        this.vrLinkTimeout = setTimeout(() => this.setState({vrLinkCopied: false}), 2000);
+                      }}>
+                <i className={"fa fa-fw " + (this.state.vrLinkCopied ? "fa-check" : "fa-clipboard")}></i> {_("Copy VR Link")}
               </button>
             </div> : ""}
           </div>
