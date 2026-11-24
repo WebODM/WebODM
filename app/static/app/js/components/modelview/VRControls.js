@@ -1206,7 +1206,7 @@ class VRControls{
     if (this.drag && this.drag.creating && !this.editing.has(this.drag.measurement)) this.cancelCreation();
     if (this.drag && !this.drag.creating && !this.drag.direct && (this.drag.hand !== laserHand || !holding || !this.editing.has(this.drag.measurement))){
       if (this.editing.has(this.drag.measurement) && this.drag.moved){
-        this.settle(this.drag);
+        if (tabletop || this.drag.hand.tracked) this.settle(this.drag);
         this.snap(this.drag.measurement, this.drag.index);
       }
       this.drag.measurement.dispatchEvent({type: "marker_dropped", [this.drag.measurement instanceof Potree.Profile ? "profile" : "measurement"]: this.drag.measurement, index: this.drag.index});
@@ -1239,7 +1239,7 @@ class VRControls{
       }
     }
 
-    if (this.drag && !this.drag.creating && !this.drag.direct && this.drag.moved){
+    if (this.drag && !this.drag.creating && !this.drag.direct && this.drag.moved && (tabletop || this.drag.hand.tracked)){
       const point = this.drag.measurement.points[this.drag.index];
       if (point) this.sample(this.drag, point.position || point);
     }
