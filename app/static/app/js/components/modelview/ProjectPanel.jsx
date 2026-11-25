@@ -43,9 +43,19 @@ class ProjectPanel extends React.Component{
     document.addEventListener("click", this.closeMenus);
     document.addEventListener("keydown", this.handleKeyDown);
     if (this.props.focused && this.panel.querySelector(".mv-tree-row.selected")) this.panel.querySelector(".mv-tree-row.selected").scrollIntoView({block: "nearest"});
+    this.syncProfileWindow();
   }
 
-  componentDidUpdate(prevProps){
+  // If the height profile window is open, show the selected profile in it
+  syncProfileWindow = () => {
+    const { viewer } = this.props;
+    const { selected } = this.state;
+    if (!(selected instanceof Potree.Profile) || !viewer.profileWindow || !viewer.profileWindow.enabled) return;
+    if (viewer.profileWindowController.profile !== selected) viewer.profileWindowController.setProfile(selected);
+  }
+
+  componentDidUpdate(prevProps, prevState){
+    if (this.state.selected !== prevState.selected) this.syncProfileWindow();
     if (this.props.focused && this.props.focused !== prevProps.focused){
       this.setState({selected: this.props.focused.item, renaming: null, tab: "properties", closed: {}, search: ""}, () => {
         if (this.panel.querySelector(".mv-tree-row.selected")) this.panel.querySelector(".mv-tree-row.selected").scrollIntoView({block: "nearest"});
@@ -551,7 +561,7 @@ class ProjectPanel extends React.Component{
           {selectedItem.type === "profile" ? [
           <div key="width" className="mv-panel-field">
             <label>{interpolate(_("Width (%(unit)s)"), {unit: viewer.lengthUnit.code})}</label>
-            <input type="number" min="0" step="0.1" value={selectedItem.obj.width}
+            <input type="number" min="0" step="0.1" value={+selectedItem.obj.width.toFixed(3)}
                    onChange={e => { selectedItem.obj.setWidth(parseFloat(e.target.value) || 0); this.forceUpdate(); }} />
           </div>,
           <div key="show" className="mv-panel-field">
