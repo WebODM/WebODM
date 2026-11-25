@@ -1092,7 +1092,7 @@ class ModelView extends React.Component {
   }
 
   initSplatsRenderer = () => {
-    this.sparkRenderer = new THREEdgs.SparkRenderer({renderer: viewer.renderer, lodSplatCount: /OculusBrowser/.test(navigator.userAgent) ? 2000000 : undefined});
+    this.sparkRenderer = new THREEdgs.SparkRenderer({renderer: viewer.renderer, lodSplatCount: Utils.isVRDevice() ? 2000000 : undefined});
     viewer.scene.scene.add(this.sparkRenderer);
     viewer.splatsRenderer = this.sparkRenderer;
   }
