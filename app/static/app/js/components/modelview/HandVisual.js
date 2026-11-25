@@ -1,9 +1,17 @@
 /**
- * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * @license
+ * Based on the Immersive Web SDK (IWSDK, https://github.com/facebook/immersive-web-sdk).
+ * Adapted from @iwsdk/xr-input 1.1.0 (AnimatedHand, BaseHandVisual, XRHandVisualAdapter).
  *
- * Ported from @iwsdk/xr-input 1.1.0 (AnimatedHand, BaseHandVisual, XRHandVisualAdapter).
+ * Original code: Copyright (c) Meta Platforms, Inc. and affiliates, MIT License (see below)
+ * Adaptation: Copyright (c) Piero Toffanin, GNU AGPL v3 (see LICENSE.md at the WebODM repository root)
+ * The combined work is distributed under the terms of the GNU AGPL v3.
+ *
+ * The original IWSDK license is retained below.
  *
  * MIT License
+ *
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
