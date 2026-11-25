@@ -495,7 +495,7 @@ class ModelView extends React.Component {
         volumes: json.volumes,
         profiles: json.profiles,
         annotations: json.annotations,
-        cameraAnimations: json.cameraAnimations.map(a => Object.assign({}, a, {t: 0})),
+        cameraAnimations: json.cameraAnimations.map(a => Object.assign({}, a, {t: 0, visible: undefined})),
         orientation: this.orientation.toArray()
     });
   }
@@ -598,7 +598,9 @@ class ModelView extends React.Component {
     data.classification = live.classification;
     data.pointclouds = [];
 
-    const hidden = scene.annotations.descendants().concat(scene.cameraAnimations).filter(a => !a.visible).map(a => a.uuid);
+    // Visibility is not part of the history, preserve the current one
+    const hidden = scene.annotations.descendants().concat(scene.cameraAnimations, scene.measurements, scene.profiles).filter(a => !a.visible).map(a => a.uuid);
+    data.cameraAnimations.forEach(a => { a.visible = hidden.indexOf(a.uuid) === -1; });
 
     viewer.inputHandler.deselectAll();
     scene.removeAllMeasurements();
@@ -610,6 +612,7 @@ class ModelView extends React.Component {
 
     scene.annotations.descendants().forEach(a => { if (hidden.indexOf(a.uuid) !== -1) a.visible = false; });
     scene.cameraAnimations.forEach(a => { if (hidden.indexOf(a.uuid) !== -1) a.setVisible(false); });
+    scene.measurements.concat(scene.profiles).forEach(m => { if (hidden.indexOf(m.uuid) !== -1) m.visible = false; });
 
     this.historyIndex = index;
     this.handleActivity();

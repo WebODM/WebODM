@@ -162,7 +162,7 @@ class Toolbar extends React.Component{
           { separator: true },
           { icon: "mv-icon mv-icon-xray", title: _("X-ray"),
             active: !!pc && pc.material.opacity < 1,
-            disabled: modelType !== "cloud",
+            disabled: !pc || modelType !== "cloud",
             onClick: () => {
               const xray = pc.material.opacity < 1;
               viewer.scene.pointclouds.forEach(p => { p.material.opacity = xray ? 1 : 0.15; });

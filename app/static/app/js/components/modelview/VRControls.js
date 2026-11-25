@@ -771,6 +771,8 @@ class VRControls{
     const ground = this.raycast(new THREE.Vector3(view.position.x, view.position.y, Math.max(view.position.z, box.max.z) + 1), new THREE.Vector3(view.position.x, view.position.y, Math.min(view.position.z, box.min.z) - 1));
     this.position.copy(ground ? ground.point : view.position);
     this.recenter = !ground;
+    this.recenterStart = 0;
+    this.recenterRetry = 0;
     this.markerPosition.copy(this.position);
     this.markerTarget.position.copy(this.position);
     this.velocity.set(0, 0, 0);
