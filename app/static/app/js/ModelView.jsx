@@ -298,6 +298,7 @@ class ModelView extends React.Component {
       setModelType: this.setModelType,
       undo: () => this.restoreHistory(this.historyIndex - 1),
       redo: () => this.restoreHistory(this.historyIndex + 1),
+      unit: this.state.cameraScale,
       getLoading: () => {
         if (this.state.initializingModel) return {message: _("Loading textured model..."), progress: this.state.texModelLoadProgress};
         if (this.state.initializingSplats) return {message: _("Loading splats..."), progress: this.state.splatsLoadProgress};

@@ -100,8 +100,9 @@ const canvasTexture = (width, height) => {
 };
 
 class VRControls{
-  constructor(viewer, {modelTypes, getModelType, setModelType, getLoading, undo, redo}){
+  constructor(viewer, {modelTypes, getModelType, setModelType, getLoading, undo, redo, unit}){
     this.viewer = viewer;
+    this.unit = unit;
     this.undo = undo;
     this.redo = redo;
     this.getModelType = getModelType;
@@ -109,7 +110,7 @@ class VRControls{
     this.getLoading = getLoading;
     this.loadingState = "";
     this.mode = "walk";
-    this.scale = 1;
+    this.scale = unit;
     this.eyeOffset = 0;
     this.calibrate = false;
     this.place = false;
@@ -577,7 +578,7 @@ class VRControls{
     const at = hand.pinch.clone().applyMatrix4(this.rig);
     const near = this.nearestEdge(at) || (this.deleting ? this.fingerTarget(hand).nearest : null);
     const s = this.scale;
-    const h = 5 * 2 / 3 / s, w = 1.875 / s;
+    const h = 5 * 2 / 3 * this.unit / s, w = 1.875 * this.unit / s;
     let best = null, bestD = w / 2 + 0.015;
     for (const measurement of this.shown){
       measurement.points.forEach((point, index) => {
@@ -593,7 +594,7 @@ class VRControls{
     if (this.deleting){
       if (best) this.removePin(best.measurement, best.index);
       else if (near){
-        smoke(viewer, near, undefined, 3, 5 * 2 / 3);
+        smoke(viewer, near, undefined, 3 * this.unit, 5 * 2 / 3 * this.unit);
         if (near instanceof Potree.Profile) viewer.scene.removeProfile(near);
         else viewer.scene.removeMeasurement(near);
         this.editing.delete(near);
@@ -615,7 +616,7 @@ class VRControls{
     const profile = measurement instanceof Potree.Profile;
     const tabletop = this.mode === "tabletop";
     const last = measurement.points.length <= (profile ? 2 : measurement.showCoordinates ? 1 : measurement.closed || measurement.showCircle ? 3 : 2);
-    smoke(this.viewer, measurement, last ? undefined : index, tabletop ? 3 : 0.5, (tabletop ? 5 : 1) * 2 / 3);
+    smoke(this.viewer, measurement, last ? undefined : index, (tabletop ? 3 : 0.5) * this.unit, (tabletop ? 5 : 1) * 2 / 3 * this.unit);
     measurement.removeMarker(index);
     if (!last) return false;
     if (profile) this.viewer.scene.removeProfile(measurement);
@@ -726,7 +727,7 @@ class VRControls{
       }
     }
     const tabletop = this.mode === "tabletop";
-    const h = (tabletop ? 5 : 1) * 2 / 3 / s, w = (tabletop ? 1.875 : 0.3) / s;
+    const h = (tabletop ? 5 : 1) * 2 / 3 * this.unit / s, w = (tabletop ? 1.875 : 0.3) * this.unit / s;
     const rayDirection = new THREE.Vector3(0, 0, -1).applyQuaternion(hand.ray.quaternion);
     for (const measurement of this.shown){
       for (const point of measurement.points){
@@ -776,7 +777,7 @@ class VRControls{
     this.markerPosition.copy(this.position);
     this.markerTarget.position.copy(this.position);
     this.velocity.set(0, 0, 0);
-    this.scale = 1;
+    this.scale = this.unit;
     this.grounded = false;
     this.updating = true;
     this.lastUpdate = performance.now();
@@ -1327,7 +1328,7 @@ class VRControls{
     let pinNearest = Infinity;
     let highlight = null;
     const rayDirection = laserHand && new THREE.Vector3(0, 0, -1).applyQuaternion(laserHand.ray.quaternion);
-    const h = (tabletop ? 5 : 1) * 2 / 3 / s, w = (tabletop ? 1.875 : 0.3) / s;
+    const h = (tabletop ? 5 : 1) * 2 / 3 * this.unit / s, w = (tabletop ? 1.875 : 0.3) * this.unit / s;
     const unaimed = this.drag && this.drag.creating && !this.drag.aimed ? this.drag.measurement : null;
     const shown = new Set(this.editing);
     if (this.deleting){
@@ -1409,7 +1410,7 @@ class VRControls{
         if (this.removePin(pinHover.measurement, pinHover.index)) hits.delete(pinHover.measurement);
         buzz(laserHand);
       }else if (first){
-        smoke(viewer, first, undefined, tabletop ? 3 : 0.5, (tabletop ? 5 : 1) * 2 / 3);
+        smoke(viewer, first, undefined, (tabletop ? 3 : 0.5) * this.unit, (tabletop ? 5 : 1) * 2 / 3 * this.unit);
         if (first instanceof Potree.Profile) viewer.scene.removeProfile(first);
         else viewer.scene.removeMeasurement(first);
         this.editing.delete(first);
@@ -1519,7 +1520,7 @@ class VRControls{
       this.mode = activated.key;
       this.cancelCreation();
       this.deleting = false;
-      this.scale = 1;
+      this.scale = this.unit;
       this.velocity.set(0, 0, 0);
       this.grounded = false;
       this.updating = true;
