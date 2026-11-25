@@ -20,6 +20,13 @@ http {
   access_log /var/log/nginx/access.log webodm_log;
   sendfile on;
 
+  gzip on;
+  gzip_comp_level 5;
+  gzip_min_length 1024;
+  gzip_proxied any;
+  gzip_vary on;
+  gzip_types text/css text/javascript application/javascript application/json application/geo+json application/xml image/svg+xml text/plain;
+
   upstream app_server {
     # fail_timeout=0 means we always retry an upstream even if it failed
     # to return a good HTTP response
