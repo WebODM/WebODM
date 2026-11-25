@@ -1,3 +1,9 @@
+/*
+ * Modified version of Potree 1.8 (http://potree.org)
+ * Original code: Copyright (c) 2011-2017 Markus Schütz, BSD 2-Clause License (see LICENSE)
+ * Modifications: Copyright (c) Piero Toffanin, GNU AGPL v3 (see LICENSE.md at the WebODM repository root)
+ * The combined work is distributed under the terms of the GNU AGPL v3.
+ */
 (function (global, factory) {
 	typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports) :
 	typeof define === 'function' && define.amd ? define(['exports'], factory) :
@@ -82771,8 +82777,6 @@ ENDSEC
 				window.addEventListener('deviceorientationabsolute', deviceOrientationChange);
 			} else if ('ondeviceorientation' in window) {
 				window.addEventListener('deviceorientation', deviceOrientationChange);
-			} else {
-				console.warn("No device orientation found.");
 			}
 			// window.addEventListener('deviceorientation', deviceOrientationChange);
 			window.addEventListener('orientationchange', screenOrientationChange);
