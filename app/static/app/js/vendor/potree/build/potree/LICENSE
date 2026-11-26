@@ -1,3 +1,9 @@
+This is a modified version of Potree, distributed as part of WebODM.
+The modifications are Copyright (c) Piero Toffanin and are licensed
+under the GNU Affero General Public License v3.0 (see LICENSE.md at the
+WebODM repository root). The combined work is distributed under the terms
+of the GNU AGPL v3. The original Potree license is retained below.
+
  
 ============
 == POTREE ==

@@ -8,14 +8,16 @@ class ShareButton extends React.Component {
   static defaultProps = {
     task: null,
     project: null,
-    popupPlacement: 'top'
+    popupPlacement: 'top',
+    showVr: false,
   };
   static propTypes = {
     task: PropTypes.object,
     project: PropTypes.object,
     linksTarget: PropTypes.oneOf(['map', '3d']).isRequired,
     popupPlacement: PropTypes.string,
-    queryParams: PropTypes.object
+    queryParams: PropTypes.object,
+    showVr: PropTypes.bool
   }
 
   constructor(props){
@@ -58,6 +60,7 @@ class ShareButton extends React.Component {
             placement={this.props.popupPlacement}
             linksTarget={this.props.linksTarget}
             queryParams={this.props.queryParams}
+            showVr={this.props.showVr}
           />;
     
     const isPublic = this.state.task ? this.state.task.public : this.state.project.public;

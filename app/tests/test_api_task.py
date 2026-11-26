@@ -1677,3 +1677,32 @@ class TestApiTask(BootTransactionTestCase):
         res = client.get("/api/projects/{}/tasks/?bbox=bad".format(project.id))
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_task_reproject(self):
+        user = User.objects.get(username="testuser")
+        project = Project.objects.create(name="User Test Project", owner=user)
+        task = Task.objects.create(project=project, name="Test")
+
+        client = APIClient()
+        client.login(username="testuser", password="test1234")
+
+        url = "/api/projects/{}/tasks/{}/reproject".format(project.id, task.id)
+        geojson = {
+            'type': 'Feature',
+            'properties': {'name': 'test'},
+            'geometry': {'type': 'Point', 'coordinates': [576721, 5188138, 5]}
+        }
+
+        res = client.post(url, {'geojson': geojson, 'source': 'EPSG:32615', 'target': 'EPSG:4326'}, format="json")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['properties']['name'], 'test')
+        coords = res.data['geometry']['coordinates']
+        self.assertEqual(len(coords), 3)
+        self.assertAlmostEqual(coords[0], -91.9938051, places=6)
+        self.assertAlmostEqual(coords[1], 46.8423615, places=6)
+        self.assertAlmostEqual(coords[2], 5, places=6)
+
+        res = client.post(url, {'geojson': 'invalid', 'source': 'EPSG:32615', 'target': 'EPSG:4326'}, format="json")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+        res = client.post(url, {'geojson': geojson, 'source': 'EPSG:32615', 'target': 'EPSG:999999'}, format="json")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)

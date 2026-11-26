@@ -7,7 +7,7 @@ from .tasks import TaskViewSet, TaskDownloads, TaskThumbnail, TaskAssets, TaskBa
   TaskAssetsImport, TaskExternalImportInit, TaskExternalImportUpload, TaskExternalImportCommit, TaskSafeTexturedModel, TaskRtc
 from .media import TaskMediaUpload, TaskMediaManage, TaskMediaDownload, TaskMediaThumbnail, TaskMediaList, TaskMediaGeoJSON, TaskVideoFlightPath
 from .splats import TaskSplatsDownload, TaskSplatsUpload, TaskSplatsDelete
-from .overlays import TaskOverlayConvert, TaskOverlaysSync, TaskOverlay, overlayStamp
+from .overlays import TaskOverlayConvert, TaskReproject, TaskOverlaysSync, TaskOverlay, overlayStamp
 from .panorama import TaskPanoramaTiles
 from .imageuploads import Thumbnail, ImageDownload
 from .processingnodes import ProcessingNodeViewSet, ProcessingNodeOptionsView
@@ -64,6 +64,7 @@ urlpatterns = [
     re_path(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/overlays/convert$', TaskOverlayConvert.as_view()),
     re_path(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/overlays/sync$', TaskOverlaysSync.as_view()),
     re_path(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/overlays/stamp$', overlayStamp),
+    re_path(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/reproject$', TaskReproject.as_view()),
 
     re_path(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/media.geojson$', TaskMediaGeoJSON.as_view()),
     re_path(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/media/$', TaskMediaList.as_view()),

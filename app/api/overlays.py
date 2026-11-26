@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 
 from django.core.files.uploadedfile import InMemoryUploadedFile
+from pyproj import CRS, Transformer
+from pyproj.exceptions import ProjError
 from django.http import FileResponse, HttpResponse
 from django.utils.translation import gettext_lazy as _
 from rest_framework import status, exceptions, parsers
@@ -294,6 +296,69 @@ class TaskOverlayConvert(TaskNestedView):
             return Response(geojson, status=status.HTTP_200_OK)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+class TaskReproject(TaskNestedView):
+    parser_classes = (parsers.JSONParser, parsers.MultiPartParser, parsers.FormParser)
+
+    def post(self, request, pk=None, project_pk=None):
+        """
+        Reproject a GeoJSON from a source SRS to a target SRS (EPSG:<code> or WKT)
+        """
+        task = self.get_and_check_task(request, pk)
+
+        geojson = request.data.get('geojson')
+        if isinstance(geojson, str):
+            if len(geojson) > MAX_OVERLAY_FILE_SIZE:
+                raise exceptions.ValidationError(detail=_("Invalid GeoJSON"))
+            try:
+                geojson = json.loads(geojson)
+            except json.JSONDecodeError:
+                raise exceptions.ValidationError(detail=_("Invalid GeoJSON"))
+        if not isinstance(geojson, dict):
+            raise exceptions.ValidationError(detail=_("Invalid GeoJSON"))
+
+        source = request.data.get('source', "EPSG:{}".format(task.epsg) if task.epsg is not None else task.wkt)
+        target = request.data.get('target')
+        if not isinstance(source, str) or not isinstance(target, str):
+            raise exceptions.ValidationError(detail=_("Invalid SRS"))
+        try:
+            source = CRS.from_user_input(source)
+            target = CRS.from_user_input(target)
+        except (TypeError, ValueError, ProjError):
+            raise exceptions.ValidationError(detail=_("Invalid SRS"))
+
+        positions = []
+        stack = [geojson]
+        while len(stack) > 0:
+            item = stack.pop()
+            if isinstance(item, dict):
+                for k in ('features', 'geometry', 'geometries', 'coordinates'):
+                    if k in item:
+                        stack.append(item[k])
+            elif isinstance(item, list) and len(item) > 0:
+                if isinstance(item[0], (int, float)):
+                    if len(item) < 2 or not all(isinstance(v, (int, float)) for v in item):
+                        raise exceptions.ValidationError(detail=_("Invalid GeoJSON"))
+                    positions.append(item)
+                else:
+                    stack.extend(item)
+
+        if len(positions) > 0:
+            try:
+                xs, ys, zs = Transformer.from_crs(source, target, always_xy=True).transform(
+                    [p[0] for p in positions],
+                    [p[1] for p in positions],
+                    [p[2] if len(p) > 2 else 0 for p in positions])
+            except ProjError as e:
+                return Response({'error': _("Cannot reproject: %(reason)s") % {'reason': str(e)}}, status=status.HTTP_400_BAD_REQUEST)
+
+            for i, p in enumerate(positions):
+                if not math.isfinite(xs[i]) or not math.isfinite(ys[i]) or not math.isfinite(zs[i]):
+                    return Response({'error': _("Cannot reproject: %(reason)s") % {'reason': "out of bounds"}}, status=status.HTTP_400_BAD_REQUEST)
+                p[:] = [xs[i], ys[i], zs[i]] if len(p) > 2 else [xs[i], ys[i]]
+
+        return Response(geojson, status=status.HTTP_200_OK)
 
 
 def overlayStamp(request, **kwargs):

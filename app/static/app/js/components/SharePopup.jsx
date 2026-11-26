@@ -19,11 +19,13 @@ class SharePopup extends React.Component{
     placement: PropTypes.string,
     taskChanged: PropTypes.func,
     projectChanged: PropTypes.func,
-    queryParams: PropTypes.object
+    queryParams: PropTypes.object,
+    showVr: PropTypes.bool
   };
   static defaultProps = {
     task: null,
     project: null,
+    showVr: false,
     placement: 'top',
     taskChanged: () => {},
     projectChanged: () => {}
@@ -39,6 +41,8 @@ class SharePopup extends React.Component{
       togglingEdits: false,
       error: "",
       showQR: false,
+      showVR: false,
+      vrLinkCopied: false,
       linkControls: [], // coming from plugins,
       relShareLink: "",
       localLinkAlertDismissed: !!Storage.getItem("local_link_alert_dismissed")
@@ -62,6 +66,10 @@ class SharePopup extends React.Component{
       url += Utils.toSearchQuery(this.props.queryParams);
     }
     return url;
+  }
+
+  componentWillUnmount(){
+    clearTimeout(this.vrLinkTimeout);
   }
 
   componentDidMount(){
@@ -151,7 +159,11 @@ class SharePopup extends React.Component{
   }
 
   toggleQRCode = () => {
-    this.setState({showQR: !this.state.showQR});
+    this.setState({showQR: !this.state.showQR, showVR: false});
+  }
+
+  toggleVR = () => {
+    this.setState({showVR: !this.state.showVR, showQR: false});
   }
 
   showLocalLinkAlert = () => {
@@ -173,6 +185,9 @@ class SharePopup extends React.Component{
 
   render(){
     const shareLink = Utils.absoluteUrl(this.getRelShareLink());
+    const vrUrl = new URL(shareLink);
+    vrUrl.searchParams.set("autovr", "1");
+    const vrLink = vrUrl.toString();
     const iframeUrl = Utils.absoluteUrl(this.getRelShareLink({iframe: true}));
     const iframeCode = `<iframe scrolling="no" title="WebODM" width="61.8033%" height="360" frameBorder="0" src="${iframeUrl}"></iframe>`;
     const isPublic = this.getObjProp('public');
@@ -183,13 +198,23 @@ class SharePopup extends React.Component{
       <div className={"sharePopupContainer popover in " + this.props.placement + " " + (projectPopup ? "shareProject" : "")}>
         <div className="arrow"></div>
         <h3 className="popover-title theme-background-highlight">{title} 
-            <button type="button" title={_("QR")}
-                className={"btn btn-qrcode btn-sm " + 
-                  (this.state.showQR ? "btn-primary " : "btn-default ") +
-                  (!isPublic ? "hide" : "")}
-                onClick={this.toggleQRCode}>
-                  <i className="fa fa-qrcode"></i>
-            </button>
+            <span className="share-toggles">
+              {this.props.showVr && window.location.protocol === "https:" ?
+              <button type="button" title={_("VR")}
+                  className={"btn btn-vr btn-sm " + 
+                    (this.state.showVR ? "btn-primary " : "btn-default ") +
+                    (!isPublic ? "hide" : "")}
+                  onClick={this.toggleVR}>
+                    <i className="fa fa-vr-cardboard"></i>
+              </button> : ""}
+              <button type="button" title={_("QR")}
+                  className={"btn btn-qrcode btn-sm " + 
+                    (this.state.showQR ? "btn-primary " : "btn-default ") +
+                    (!isPublic ? "hide" : "")}
+                  onClick={this.toggleQRCode}>
+                    <i className="fa fa-qrcode"></i>
+              </button>
+            </span>
         </h3>
         <div className="popover-content theme-secondary">
           <ErrorMessage bind={[this, 'error']} />
@@ -233,7 +258,7 @@ class SharePopup extends React.Component{
               </div>
             : ""}
             
-            <div className={"form-group " + (this.state.showQR ? "hide" : "")}>
+            <div className={"form-group " + (this.state.showQR || this.state.showVR ? "hide" : "")}>
               <label>
                 {_("Link:")}
                 <ClipboardInput 
@@ -244,13 +269,13 @@ class SharePopup extends React.Component{
                   />
               </label>
             </div>
-            <div className={"form-group " + (this.state.showQR || this.state.linkControls.length === 0 ? "hide" : "")}>
+            <div className={"form-group " + (this.state.showQR || this.state.showVR || this.state.linkControls.length === 0 ? "hide" : "")}>
             {this.state.linkControls.map((Ctrl, i) => 
                   <Ctrl key={i} 
                         sharePopup={this}
                       />)}
             </div>
-            <div className={"form-group " + (this.state.showQR ? "hide" : "")}>
+            <div className={"form-group " + (this.state.showQR || this.state.showVR ? "hide" : "")}>
               <label>
                 {_("HTML iframe:")}
                 <ClipboardInput 
@@ -270,6 +295,36 @@ class SharePopup extends React.Component{
                 level={"M"}
               />
             </div>
+            {this.state.showVR ?
+            <div>
+              <button type="button" className="btn btn-primary btn-block"
+                      onClick={() => window.open(`https://www.oculus.com/open_url/?url=${encodeURIComponent(vrLink)}`, "_blank")}>
+                <i className="fa fa-vr-cardboard"></i> {_("Open in Meta Quest")}
+              </button>
+              <button type="button" className="btn btn-default btn-block"
+                      onClick={() => {
+                        if (navigator.clipboard !== undefined){
+                          navigator.clipboard.writeText(vrLink);
+                        }else{
+                          const el = document.createElement('textarea');
+                          el.value = vrLink;
+                          el.style.position = 'fixed';
+                          el.style.opacity = '0';
+                          document.body.appendChild(el);
+                          el.select();
+                          try{
+                            document.execCommand('copy');
+                          }finally{
+                            document.body.removeChild(el);
+                          }
+                        }
+                        this.setState({vrLinkCopied: true});
+                        clearTimeout(this.vrLinkTimeout);
+                        this.vrLinkTimeout = setTimeout(() => this.setState({vrLinkCopied: false}), 2000);
+                      }}>
+                <i className={"fa fa-fw " + (this.state.vrLinkCopied ? "fa-check" : "fa-clipboard")}></i> {_("Copy VR Link")}
+              </button>
+            </div> : ""}
           </div>
         </div>
       </div>

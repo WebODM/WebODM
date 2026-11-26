@@ -102,3 +102,5 @@ package-lock.json
 .DS_Store
 
 .secret_key
+
+app/static/app/js/vendor/webxr-input-profiles

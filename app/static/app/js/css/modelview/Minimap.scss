@@ -1,0 +1,81 @@
+.mv-minimap{
+    position: absolute;
+    z-index: 3;
+    left: 12px;
+    bottom: 12px;
+    width: 35px;
+    height: 34px;
+
+    button:focus{
+        outline: none;
+    }
+
+    &.open{
+        padding: 4px;
+        border: 2px solid #6f8a95;
+        border-radius: 4px;
+        background: #000;
+        overflow: hidden;
+    }
+
+    canvas{
+        display: block;
+    }
+
+    .mv-minimap-toggle{
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        height: 34px;
+        padding: 5px 9px;
+        border-width: 1px;
+    }
+
+    .mv-minimap-close{
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: #6f8a95;
+        font-size: 15px;
+
+        &:hover{
+            background: rgba(255, 255, 255, 0.15);
+        }
+    }
+
+    .mv-minimap-resize-n{
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 12px;
+        height: 8px;
+        cursor: ns-resize;
+        touch-action: none;
+    }
+
+    .mv-minimap-resize-e{
+        position: absolute;
+        top: 12px;
+        right: 0;
+        bottom: 0;
+        width: 8px;
+        cursor: ew-resize;
+        touch-action: none;
+    }
+
+    .mv-minimap-resize-ne{
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 12px;
+        height: 12px;
+        cursor: nesw-resize;
+        touch-action: none;
+    }
+}

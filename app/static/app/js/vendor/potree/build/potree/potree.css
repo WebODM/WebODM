@@ -195,27 +195,29 @@ a:hover, a:visited, a:link, a:active{
 .annotation{
 	position:		absolute;
 	padding:		10px;
+	font-size:		13px;
 	opacity:		0.5;
 	transform:		translate(-50%, -30px);
 	will-change:	left, top;
+	pointer-events:	auto;
 }
 
 .annotation-titlebar{
 	color:			white;
 	background-color:	black;
-	border-radius:	1.5em;
-	border:			1px solid rgba(255, 255, 255, 0.7);
+	border-radius:	4px;
+	border:			0;
 	font-size:		1em;
 	opacity:		1;
 	margin:			auto;
 	display:		table;
-	padding:		1px 8px;
+	padding:		1px 6px;
 	cursor: 		pointer;
 }
 
 .annotation-expand{
 	color:			white;
-	font-size:		0.6em;
+	font-size:		12px;
 	opacity:		1;
 }
 
@@ -275,30 +277,57 @@ a:hover, a:visited, a:link, a:active{
 	font-weight:	bold;
 	cursor: 		pointer;
 	white-space:	nowrap;
+	min-width:		2em;
+	min-height:		1.5em;
+}
+
+.annotation:focus-within{
+	opacity:		1 !important;
+}
+
+.annotation-titlebar:focus-within{
+	box-shadow:		none !important;
+}
+
+.annotation [contenteditable]{
+	border:			0;
+	box-shadow:		none;
+	user-select:	text;
+	-moz-user-select: text;
+	cursor:			text;
+	outline:		none;
 }
 
 .annotation-description{
 	position:		relative;
 	color:			white;
 	background-color:	black;
-	padding:		10px;
-	margin:			5px 0px 0px 0px;
+	padding:		6px 8px;
+	font-size:		12px;
+	margin:			5px auto 0px auto;
 	border-radius:	4px;
 	display:		none;
 	max-width:		500px;
-	width:			500px;
+	width:			max-content;
+	cursor:			default;
 }
 
-.annotation-description-close{
-	filter:			invert(100%);
-	float:			right;
-	opacity:		0.5;
-	margin:			0px 0px 8px 8px;
-}
-
-	
 .annotation-description-content{
+	display:		block;
 	color:			white;
+	white-space:	pre-wrap;
+	overflow-wrap:	anywhere;
+	min-height:		1.5em;
+}
+
+.annotation-link{
+	display:		block;
+	color:			#9cf;
+	word-break:		break-all;
+}
+
+.annotation-link:empty{
+	display:		none;
 }
 
 .annotation-icon{

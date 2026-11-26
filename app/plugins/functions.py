@@ -88,7 +88,7 @@ def build_plugins():
         if plugin.path_exists("locale"):
             for po in glob.glob(plugin.get_path("locale", "*", "LC_MESSAGES", "*.po")):
                 mo = po[:-3] + ".mo"
-                if not os.path.exists(mo):
+                if not os.path.exists(mo) or os.path.getmtime(po) > os.path.getmtime(mo):
                     logger.info("Building {}".format(mo))
                     try:
                         subprocess.call(["msgfmt", "--check-format", "-o", mo, po])

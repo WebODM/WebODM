@@ -23,6 +23,10 @@ class Setting(models.Model):
                                       processors=[ResizeToFit(36, 36)],
                                       format='PNG',
                                       options={'quality': 90})
+    app_logo_108 = ImageSpecField(source='app_logo',
+                                      processors=[ResizeToFit(108, 108)],
+                                      format='PNG',
+                                      options={'quality': 90})
     app_logo_favicon = ImageSpecField(source='app_logo',
                                       processors=[ResizeToFit(48, 48)],
                                       format='PNG',

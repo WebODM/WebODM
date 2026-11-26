@@ -38,6 +38,25 @@
         }
     }
 
+    .container{
+        background: radial-gradient(ellipse at center, rgba(79,79,79,1) 0%,rgba(22,22,22,1) 100%);
+        position: relative;
+        padding: 0;
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    .mv-body{
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+    }
+
+    input[type="checkbox"]{
+        position: relative;
+        top: 2px;
+    }
+
     .asset-download-buttons{
         button{
             padding: 5px 9px;
@@ -48,64 +67,15 @@
         }
     }
 
-    .container{
-        background: rgb(79,79,79);
-        background: -moz-radial-gradient(center, ellipse cover, rgba(79,79,79,1) 0%, rgba(22,22,22,1) 100%);
-        background: -webkit-gradient(radial, center center, 0px, center center, 100%, color-stop(0%,rgba(79,79,79,1)), color-stop(100%,rgba(22,22,22,1)));
-        background: -webkit-radial-gradient(center, ellipse cover, rgba(79,79,79,1) 0%,rgba(22,22,22,1) 100%);
-        background: -o-radial-gradient(center, ellipse cover, rgba(79,79,79,1) 0%,rgba(22,22,22,1) 100%);
-        background: -ms-radial-gradient(center, ellipse cover, rgba(79,79,79,1) 0%,rgba(22,22,22,1) 100%);
-        background: radial-gradient(ellipse at center, rgba(79,79,79,1) 0%,rgba(22,22,22,1) 100%);
-        filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#4f4f4f', endColorstr='#161616',GradientType=1 );
-    	position: relative;
-    	padding: 0;
-        flex: 1 1 auto;
-        min-height: 0;
-    }
-    .dg{
-	    &.main{
-		    position: absolute;
-		    right: 0px;
-	    }
-	    .c{
-	    	select{
-	    		color: black;
-	    	}
-	    }
-    }
-
-    input[type="checkbox"]{
-        position: relative;
-        top: 2px;
-    }
-
-    .action-buttons{
-        padding: 12px;
-        background-color: #19282c;
-
-        .textured-model-chkbox-container{
-            margin-bottom: 8px;
-        }
-
-        label{
-            color: #7a8184;
-        }
-
-        .asset-download-buttons{
-            margin-right: 8px;
-            &.open{
-                button{
-                    outline: none;
-                }
-            }
-        }
-
-    }
     .model-action-buttons{
         position: absolute;
-        z-index: 1;
+        z-index: 3;
         bottom: 12px;
-        right: 6px;
+        right: 4px;
+
+        &.panel-open{
+            right: 336px;
+        }
 
         &.modal-open{
             z-index: 999999;
@@ -154,35 +124,6 @@
         display: none
     }
 
-    #potree_menu{
-        h3{
-            box-shadow: none;
-        }
-
-        input{
-            color: buttontext;
-        }
-        legend{
-            display: initial !important;
-            width: initial !important;
-            padding: initial !important;
-            margin-bottom: initial !important;
-            font-size: inherit !important;
-            line-height: initial !important;
-            color: inherit !important;
-            border: initial !important;
-            border-bottom: initial !important;
-        }
-
-        #show_2d_profile{
-            color: initial !important;
-        }
-        
-        h3{
-            font-size: 14px;
-        }
-    }
-
     #potree_map_header{
         position: absolute; 
         width: 100%; 
@@ -204,65 +145,16 @@
         box-sizing: border-box;
     }
 
-    &.sidebar-open #potree_sidebar_container{
-        z-index: 2;
-    }
-
-    #potree_sidebar_container{
-        overflow-y: auto;
-        background-color: #19282c;
-
-        a{
-            color: #111;
-        }  
-
-        #sidebar_root{
-            width: 300px;
-
-            .pv-menu-list{
-                padding-right: 12px;
-
-                .divider{
-                    padding: 10px 0px 15px 0px;
-                }
-
-                a{
-                    color: #8Aa1c4;
-                } 
-            }
-
-            .measurement-panel-remove:hover{
-                cursor: pointer;
-            }
-
-            position: absolute; 
-            min-height: 100%; 
-            height: 100%;
-
-            .potree_sidebar_brand{
-                display: flex; 
-                flex-direction: row;
-            }
-
-            #potree_version_number{
-                color: #9AA1A4; 
-                font-size: 80%; 
-                font-weight: 100;
-            }
-        }
-    }
-
-    
     #potree_download_profile_ortho_link, #potree_download_profile_link{
         color: black;
     }
 
     .thumbnail{
         position: absolute;
-        top: 8px;
-        right: 8px;
+        top: 20px;
+        left: 20px;
         z-index: 10;
-        background: #19282c;
+        background: #1f282c;
         border-color: #a6a9aa;
         color: #ccccff;
         .close-thumb{
@@ -275,8 +167,51 @@
             }
         }
     }
-}
 
-#profile_window{
-    z-index: 999999999999 !important;
+    .vr-prompt{
+        position: absolute;
+        inset: 0;
+        z-index: 2000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        background: rgba(0, 0, 0, 0.6);
+    }
+
+    .vr-prompt-box{
+        position: relative;
+        width: 100%;
+        max-width: 480px;
+        padding: 56px 32px 32px;
+        border-radius: 8px;
+        background: #263238;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+
+        .btn{
+            padding: 16px;
+            font-size: 22px;
+        }
+
+        .btn + .btn{
+            margin-top: 16px;
+        }
+    }
+
+    .vr-prompt-close{
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 40px;
+        height: 40px;
+        border: 0;
+        background: transparent;
+        color: #fff;
+        font-size: 22px;
+        opacity: 0.7;
+
+        &:hover{
+            opacity: 1;
+        }
+    }
 }

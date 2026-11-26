@@ -49,7 +49,7 @@ class CameraView(TaskNestedView):
         if not task.potree_scene:
             init_p = {
                 'type': 'Potree',
-                'version': 1.7
+                'version': 2.0
             } 
             task.potree_scene = init_p
         

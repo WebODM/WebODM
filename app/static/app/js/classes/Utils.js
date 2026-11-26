@@ -126,6 +126,10 @@ export default {
       return navigator.userAgent.match(/(android)|(webOS)/i) || this.isIOS();
     },
 
+    isVRDevice: function(){
+      return navigator.userAgent.match(/(OculusBrowser)|(Quest)|(Pico)|(Wolvic)|(Vive)|(\bVR\b)/i);
+    },
+
     isIOS: function(){
       return navigator.userAgent.match(/(iPad)|(iPhone)|(iPod)/i) || (navigator.userAgent.match(/Mac/i) && "ontouchend" in document);
     },

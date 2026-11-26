@@ -13,6 +13,10 @@ register = template.Library()
 logger = logging.getLogger('app.logger')
 
 @register.simple_tag
+def app_version():
+    return settings.VERSION
+
+@register.simple_tag
 def task_options_docs_link():
     return settings.TASK_OPTIONS_DOCS_LINK
 

@@ -4,7 +4,8 @@ const types = {
     LENGTH: 1,
     AREA: 2,
     VOLUME: 3,
-    TEMPERATURE: 4
+    TEMPERATURE: 4,
+    PITCH: 5
 };
 
 const units = {
@@ -167,6 +168,26 @@ const units = {
         round: 1,
         label: _("Fahrenheit"),
         type: types.TEMPERATURE
+    },
+    degrees:{
+        conversion:{
+            forward: degrees => degrees,
+            backward: degrees => degrees
+        },
+        abbr: '°',
+        round: 1,
+        label: _("Degrees"),
+        type: types.PITCH
+    },
+    rise12:{
+        conversion:{
+            forward: degrees => Math.tan(degrees * Math.PI / 180) * 12,
+            backward: rise => Math.atan(rise / 12) * 180 / Math.PI
+        },
+        abbr: '/12',
+        round: 1,
+        label: _("Rise Over 12"),
+        type: types.PITCH
     }
 };
 
@@ -185,7 +206,7 @@ class ValueUnit{
         parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
         withCommas = parts.join(".");
 
-        return `${withCommas} ${this.unit.abbr}`;
+        return `${withCommas}${this.unit.type === types.PITCH ? "" : " "}${this.unit.abbr}`;
     }
 }
 
@@ -204,6 +225,7 @@ class UnitSystem{
     areaUnit(sqmeters, opts = {}){ throw new Error("Not implemented"); }
     volumeUnit(cbmeters, opts = {}){ throw new Error("Not implemented"); }
     temperatureUnit(celsius, opts = {}){ throw new Error("Not implemented"); }
+    pitchUnit(degrees, opts = {}){ throw new Error("Not implemented"); }
     
     getName(){ throw new Error("Not implemented"); }
     getKey(){ throw new Error("Not implemented"); }
@@ -247,6 +269,15 @@ class UnitSystem{
         const val = unit.conversion.forward(celsius);
         return new ValueUnit(val, unit);
     }
+
+    pitch(degrees, opts = {}){
+        degrees = parseFloat(degrees);
+        if (isNaN(degrees)) return new NanUnit();
+
+        const unit = this.pitchUnit(degrees, opts);
+        const val = unit.conversion.forward(degrees);
+        return new ValueUnit(val, unit);
+    }
 };
 
 function toMetric(valueUnit, unit){
@@ -276,6 +307,8 @@ function toMetric(valueUnit, unit){
         return new ValueUnit(val, units.cbmeters);
     }else if (unit.type === types.TEMPERATURE){
         return new ValueUnit(val, units.celsius);
+    }else if (unit.type === types.PITCH){
+        return new ValueUnit(val, units.degrees);
     }else{
         throw new Error(`Unrecognized unit type: ${unit.type}`);
     }
@@ -313,6 +346,10 @@ class MetricSystem extends UnitSystem{
 
     temperatureUnit(celsius, opts = {}){
         return units.celsius;
+    }
+
+    pitchUnit(degrees, opts = {}){
+        return units.degrees;
     }
 }
 
@@ -377,6 +414,10 @@ class ImperialSystem extends UnitSystem{
 
     temperatureUnit(celsius, opts = {}){
         return units.fahrenheit;
+    }
+
+    pitchUnit(degrees, opts = {}){
+        return units.rise12;
     }
 }
 
