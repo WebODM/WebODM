@@ -6,7 +6,7 @@ import '../../css/modelview/Panel.scss';
 import { _, interpolate } from '../../classes/gettext';
 import { systems } from '../../classes/Units';
 
-class ProjectPanel extends React.Component{
+class LayersPanel extends React.Component{
   static propTypes = {
     viewer: PropTypes.object.isRequired,
     task: PropTypes.object.isRequired,
@@ -15,8 +15,8 @@ class ProjectPanel extends React.Component{
     onToggleCameras: PropTypes.func.isRequired,
     onCameraScaleChange: PropTypes.func.isRequired,
     onAttributeChange: PropTypes.func.isRequired,
-    inserted: PropTypes.object,
-    focused: PropTypes.object,
+    createdItem: PropTypes.object,
+    focusedItem: PropTypes.object,
     onSetInitialCameraView: PropTypes.func,
     onClose: PropTypes.func.isRequired
   }
@@ -25,12 +25,12 @@ class ProjectPanel extends React.Component{
     super(props);
 
     this.state = {
-      selected: props.inserted || (props.focused ? props.focused.item : null),
+      selected: props.createdItem || (props.focusedItem ? props.focusedItem.item : null),
       tab: "properties",
       cameraScale: 1,
       search: "",
       closed: {},
-      renaming: props.inserted instanceof Potree.Annotation && !props.inserted.hasView() ? null : props.inserted,
+      renaming: props.createdItem instanceof Potree.Annotation && !props.createdItem.hasView() ? null : props.createdItem,
       menu: null,
       exportOpen: false,
       recording: false,
@@ -42,7 +42,7 @@ class ProjectPanel extends React.Component{
     this.refreshInterval = setInterval(() => this.forceUpdate(), 500);
     document.addEventListener("click", this.closeMenus);
     document.addEventListener("keydown", this.handleKeyDown);
-    if (this.props.focused && this.panel.querySelector(".mv-tree-row.selected")) this.panel.querySelector(".mv-tree-row.selected").scrollIntoView({block: "nearest"});
+    if (this.props.focusedItem && this.panel.querySelector(".mv-tree-row.selected")) this.panel.querySelector(".mv-tree-row.selected").scrollIntoView({block: "nearest"});
     this.syncProfileWindow();
   }
 
@@ -56,13 +56,13 @@ class ProjectPanel extends React.Component{
 
   componentDidUpdate(prevProps, prevState){
     if (this.state.selected !== prevState.selected) this.syncProfileWindow();
-    if (this.props.focused && this.props.focused !== prevProps.focused){
-      this.setState({selected: this.props.focused.item, renaming: null, tab: "properties", closed: {}, search: ""}, () => {
+    if (this.props.focusedItem && this.props.focusedItem !== prevProps.focusedItem){
+      this.setState({selected: this.props.focusedItem.item, renaming: null, tab: "properties", closed: {}, search: ""}, () => {
         if (this.panel.querySelector(".mv-tree-row.selected")) this.panel.querySelector(".mv-tree-row.selected").scrollIntoView({block: "nearest"});
       });
     }
-    if (this.props.inserted && this.props.inserted !== prevProps.inserted){
-      this.setState({selected: this.props.inserted, renaming: this.props.inserted instanceof Potree.Annotation && !this.props.inserted.hasView() ? null : this.props.inserted, tab: "properties", closed: {}});
+    if (this.props.createdItem && this.props.createdItem !== prevProps.createdItem){
+      this.setState({selected: this.props.createdItem, renaming: this.props.createdItem instanceof Potree.Annotation && !this.props.createdItem.hasView() ? null : this.props.createdItem, tab: "properties", closed: {}});
     }
   }
 
@@ -899,4 +899,4 @@ class ProjectPanel extends React.Component{
   }
 }
 
-export default ProjectPanel;
+export default LayersPanel;

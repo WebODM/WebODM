@@ -262,9 +262,9 @@ class Toolbar extends React.Component{
       },
       { separator: true },
       {
-        id: "project", icon: "mv-icon mv-icon-project", title: _("Layer List"),
-        active: this.props.panel === "project",
-        onClick: () => this.props.onTogglePanel("project")
+        id: "layers", icon: "mv-icon mv-icon-layers", title: _("Layer List"),
+        active: this.props.panel === "layers",
+        onClick: () => this.props.onTogglePanel("layers")
       },
       {
         id: "history", icon: "mv-icon mv-icon-history", title: _("Action history"),

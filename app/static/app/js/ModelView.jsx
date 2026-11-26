@@ -17,7 +17,7 @@ import { _, interpolate } from './classes/gettext';
 import { getUnitSystem, setUnitSystem, onUnitSystemChanged, offUnitSystemChanged } from './classes/Units';
 import UnitSelector from './components/UnitSelector';
 import Toolbar from './components/modelview/Toolbar';
-import ProjectPanel from './components/modelview/ProjectPanel';
+import LayersPanel from './components/modelview/LayersPanel';
 import SettingsWindow from './components/modelview/SettingsWindow';
 import Magnifier from './components/modelview/Magnifier';
 import Roofs from './components/modelview/Roofs';
@@ -75,11 +75,11 @@ class ModelView extends React.Component {
       camerasVisible: false,
       pluginActionButtons: [],
       viewer: null,
-      panel: null,
+      panel: null, // which side panel is open
       smallScreen: false,
       vr: false,
-      inserted: null,
-      focused: null
+      createdItem: null,
+      focusedItem: null
     };
 
     this.settings = {};
@@ -95,7 +95,7 @@ class ModelView extends React.Component {
     this.saveSceneAbort = null;
     this.saveSceneTimeout = null;
     this.saveSceneErrors = 0;
-    this.activity = 0;
+    this.lastActivity = 0;
     this.pendingSceneData = null;
 
     this.pointCloud = null;
@@ -459,12 +459,12 @@ class ModelView extends React.Component {
     this.highlight = new Highlight(viewer);
     this.reorient = new Reorient(viewer, this.applyReorientation);
     viewer.roofTool = new Roofs(viewer, this.handleInsert);
-    viewer.renderer.domElement.addEventListener( 'mousedown', this.handleRenderMouseClick );
-    viewer.renderer.domElement.addEventListener( 'mousedown', this.handleRenderMouseDownCapture, true );
-    viewer.renderer.domElement.addEventListener( 'mouseup', this.handleRenderMouseUpCapture, true );
+    viewer.renderer.domElement.addEventListener( 'mousedown', this.handleMouseDown );
+    viewer.renderer.domElement.addEventListener( 'mousedown', this.handleMouseDownCapture, true );
+    viewer.renderer.domElement.addEventListener( 'mouseup', this.handleMouseUpCapture, true );
     viewer.renderArea.addEventListener( 'contextmenu', this.handleAnnotationContextMenu );
-    viewer.renderer.domElement.addEventListener( 'dblclick', this.handleRenderDoubleClickCapture, true );
-    viewer.renderer.domElement.addEventListener( 'mousemove', this.handleRenderMouseMove );
+    viewer.renderer.domElement.addEventListener( 'dblclick', this.handleDoubleClickCapture, true );
+    viewer.renderer.domElement.addEventListener( 'mousemove', this.handleMouseMove );
     
     PluginsAPI.ModelView.triggerAddActionButton({
       viewer
@@ -537,7 +537,7 @@ class ModelView extends React.Component {
   }
 
   handleActivity = () => {
-    this.activity = performance.now();
+    this.lastActivity = performance.now();
   }
 
   checkScene = () => {
@@ -547,7 +547,7 @@ class ModelView extends React.Component {
     const pos = viewer.scene.view.position;
     if (pos.x === 0 && pos.y === 0 && pos.z === 0) viewer.fitToScreen();
 
-    if (!viewer.renderer.xr.isPresenting && performance.now() - this.activity > 2000) return;
+    if (!viewer.renderer.xr.isPresenting && performance.now() - this.lastActivity > 2000) return;
     if (viewer.inputHandler.drag || viewer.vrControls.drag || viewer.scene.cameraAnimations.some(a => a.dragging) || this.reorient.active()) return;
     if (this.removeInvalidItems()) return;
 
@@ -665,6 +665,7 @@ class ModelView extends React.Component {
   }
 
   handlePageHide = () => {
+    // Make sure we save the scene on tab switch
     if (document.visibilityState !== "hidden" || !this.canEdit() || this.prevSceneData === null) return;
 
     if (!this.removeInvalidItems()){
@@ -735,7 +736,7 @@ class ModelView extends React.Component {
   }
 
   handleInsert = (item) => {
-    if (!Utils.isMobile() || item instanceof Potree.CameraAnimation || (item instanceof Potree.Annotation && item.hasView())) this.setState({panel: "project", inserted: item, focused: null});
+    if (!Utils.isMobile() || item instanceof Potree.CameraAnimation || (item instanceof Potree.Annotation && item.hasView())) this.setState({panel: "layers", createdItem: item, focusedItem: null});
   }
 
   handleSmallScreen = () => {
@@ -744,7 +745,7 @@ class ModelView extends React.Component {
   }
 
   togglePanel = (panel) => {
-    this.setState({panel: this.state.panel === panel ? null : panel, inserted: null, focused: null});
+    this.setState({panel: this.state.panel === panel ? null : panel, createdItem: null, focusedItem: null});
   }
 
   handleUnitSystemChanged = () => {
@@ -792,12 +793,12 @@ class ModelView extends React.Component {
     viewer.roofTool.dispose();
     this.highlight.dispose();
     this.reorient.dispose();
-    viewer.renderer.domElement.removeEventListener( 'mousedown', this.handleRenderMouseClick );
-    viewer.renderer.domElement.removeEventListener( 'mousedown', this.handleRenderMouseDownCapture, true );
-    viewer.renderer.domElement.removeEventListener( 'mouseup', this.handleRenderMouseUpCapture, true );
+    viewer.renderer.domElement.removeEventListener( 'mousedown', this.handleMouseDown );
+    viewer.renderer.domElement.removeEventListener( 'mousedown', this.handleMouseDownCapture, true );
+    viewer.renderer.domElement.removeEventListener( 'mouseup', this.handleMouseUpCapture, true );
     viewer.renderArea.removeEventListener( 'contextmenu', this.handleAnnotationContextMenu );
-    viewer.renderer.domElement.removeEventListener( 'dblclick', this.handleRenderDoubleClickCapture, true );
-    viewer.renderer.domElement.removeEventListener( 'mousemove', this.handleRenderMouseMove );
+    viewer.renderer.domElement.removeEventListener( 'dblclick', this.handleDoubleClickCapture, true );
+    viewer.renderer.domElement.removeEventListener( 'mousemove', this.handleMouseMove );
     
   }
 
@@ -829,7 +830,7 @@ class ModelView extends React.Component {
     });
   }
 
-  handleRenderMouseMove = (evt) => {
+  handleMouseMove = (evt) => {
     if (this._prevCamera && this._prevCamera !== this.state.selectedCamera) {
         this.setCameraOpacity(this._prevCamera, 0.7);
     }
@@ -844,7 +845,7 @@ class ModelView extends React.Component {
     this._prevCamera = camera;
   }
 
-  handleRenderMouseDownCapture = () => {
+  handleMouseDownCapture = () => {
     this.placingOnMouseDown = !!viewer.inputHandler.drag;
   }
 
@@ -869,14 +870,14 @@ class ModelView extends React.Component {
     return inserting;
   }
 
-  handleRenderMouseUpCapture = (evt) => {
+  handleMouseUpCapture = (evt) => {
     setTimeout(this.removeInvalidItems, 0);
     if (evt.button !== 2 || this.placingOnMouseDown || viewer.inputHandler.getNormalizedDrag().length() !== 0) return;
 
     const hovered = viewer.inputHandler.hoveredElements.map(h => h.object);
     const roof = viewer.roofTool.pick(viewer.selectedItem);
     const item = (roof && roof.face) || viewer.scene.measurements.concat(viewer.scene.profiles).find(m => m.spheres.some(s => hovered.indexOf(s) !== -1)) || viewer.scene.volumes.find(v => hovered.indexOf(v) !== -1) || this.pointOfViewAt(evt);
-    if (item) this.setState({panel: "project", inserted: null, focused: {item}});
+    if (item) this.setState({panel: "layers", createdItem: null, focusedItem: {item}});
   }
 
   handleAnnotationContextMenu = (evt) => {
@@ -884,7 +885,7 @@ class ModelView extends React.Component {
     if (!el) return;
 
     const item = viewer.scene.annotations.descendants().find(a => a.domElement[0] === el);
-    if (item) this.setState({panel: "project", inserted: null, focused: {item}});
+    if (item) this.setState({panel: "layers", createdItem: null, focusedItem: {item}});
   }
 
   pointOfViewAt = (evt) => {
@@ -897,16 +898,16 @@ class ModelView extends React.Component {
     });
   }
 
-  handleRenderDoubleClickCapture = (evt) => {
+  handleDoubleClickCapture = (evt) => {
     const item = this.pointOfViewAt(evt);
     if (!item) return;
 
     evt.stopImmediatePropagation();
     item.moveHere(viewer.scene.getActiveCamera());
-    this.setState({panel: "project", inserted: null, focused: {item}});
+    this.setState({panel: "layers", createdItem: null, focusedItem: {item}});
   }
 
-  handleRenderMouseClick = (evt) => {
+  handleMouseDown = (evt) => {
     let camera = this.getCameraUnderCursor(evt);
     // Deselect
     if (camera === this.state.selectedCamera){
@@ -1325,18 +1326,18 @@ class ModelView extends React.Component {
                                         onReorient={this.props.task.epsg || this.props.task.wkt ? null : measure => this.reorient.start(measure)}
                                         onEnterVR={this.state.vr ? () => this.vrButton.element.click() : null} /> : ""}
 
-                    {viewer && panel === "project" ?
-                    <ProjectPanel viewer={viewer}
+                    {viewer && panel === "layers" ?
+                    <LayersPanel viewer={viewer}
                                 task={this.props.task}
                                 hasCameras={this.hasCameras()}
                                 camerasVisible={this.state.camerasVisible}
                                 onToggleCameras={this.toggleCameras}
                                 onAttributeChange={() => this.forceUpdate()}
-                                inserted={this.state.inserted}
-                                focused={this.state.focused}
+                                createdItem={this.state.createdItem}
+                                focusedItem={this.state.focusedItem}
                                 onSetInitialCameraView={this.props.public ? null : this.setInitialCameraView}
                                 onCameraScaleChange={this.changeCameraScale}
-                                onClose={() => this.setState({panel: null, inserted: null, focused: null})} />
+                                onClose={() => this.setState({panel: null, createdItem: null, focusedItem: null})} />
                     : ""}
 
                     {viewer && panel === "history" ?
@@ -1360,7 +1361,7 @@ class ModelView extends React.Component {
 
                     {viewer ? <ProfilePanel viewer={viewer} /> : ""}
 
-                    {viewer && this.settings.gizmo === true ? <Gizmo viewer={viewer} shifted={panel === "project" || panel === "history"} /> : ""}
+                    {viewer && this.settings.gizmo === true ? <Gizmo viewer={viewer} shifted={panel === "layers" || panel === "history"} /> : ""}
 
                     {viewer && this.settings.minimap !== false && !this.state.smallScreen ? <Minimap viewer={viewer} /> : ""}
 
@@ -1381,7 +1382,7 @@ class ModelView extends React.Component {
                     progress={initializingSplats ? this.state.splatsLoadProgress : this.state.texModelLoadProgress}
                     />
 
-                    <div className={"model-action-buttons " + (this.state.modalOpen ? "modal-open" : "") + (panel === "project" || panel === "history" ? " panel-open" : "") + (panel === "settings" ? " hide" : "")}>
+                    <div className={"model-action-buttons " + (this.state.modalOpen ? "modal-open" : "") + (panel === "layers" || panel === "history" ? " panel-open" : "") + (panel === "settings" ? " hide" : "")}>
                         <UnitSelector />
                         <AssetDownloadButtons 
                                         task={this.props.task} 
