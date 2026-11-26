@@ -784,7 +784,7 @@ class ModelView extends React.Component {
     else if (key === "hq"){
         if (this.getCurrentModelType() === "cloud") viewer.useHQ = value;
     }
-    else if (key === "compass") viewer.compass.setVisible(value && !this.smallScreen.matches);
+    else if (key === "compass") viewer.compass.setVisible(this.compassVisible(value));
     else if (key === "smoothness"){
         const factor = {smooth: 0.5, standard: 1, snappy: 2.5}[value] || 1;
         viewer.orbitControls.fadeFactor = 20 * factor;
@@ -813,8 +813,17 @@ class ModelView extends React.Component {
     if (!Utils.isMobile() || item instanceof Potree.CameraAnimation || (item instanceof Potree.Annotation && item.hasView())) this.setState({panel: "layers", createdItem: item, focusedItem: null});
   }
 
+  isGeoreferenced = () => {
+    return !!(this.props.task.epsg || this.props.task.wkt);
+  }
+
+  // The compass is meaningless without georeferencing (north is unknown)
+  compassVisible = (enabled) => {
+    return !!enabled && !this.smallScreen.matches && this.isGeoreferenced();
+  }
+
   handleSmallScreen = () => {
-    viewer.compass.setVisible(this.settings.compass !== false && !this.smallScreen.matches);
+    viewer.compass.setVisible(this.compassVisible(this.settings.compass !== false));
     this.setState({smallScreen: this.smallScreen.matches});
   }
 
