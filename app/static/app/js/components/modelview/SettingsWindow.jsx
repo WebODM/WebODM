@@ -98,7 +98,7 @@ class SettingsWindow extends React.Component{
         this.row(_("Orientation Indicator"), _("Displays X/Y/Z axes in the top-right."),
           this.toggle("gizmo", settings.gizmo === true)),
         this.row(_("Navigation Compass"), _("Displays a compass."),
-          this.toggle("compass", viewer.compass.isVisible()))
+          this.toggle("compass", viewer.compass.isVisible(), !(task.epsg || task.wkt)))
       ];
 
       if (this.props.onSetInitialCameraView){
