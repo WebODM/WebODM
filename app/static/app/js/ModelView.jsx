@@ -24,6 +24,7 @@ import Roofs from './components/modelview/Roofs';
 import VRControls from './components/modelview/VRControls';
 import Highlight from './components/modelview/Highlight';
 import Reorient from './components/modelview/Reorient';
+import SetScale from './components/modelview/SetScale';
 import ProfilePanel from './components/modelview/ProfilePanel';
 import HistoryPanel from './components/modelview/HistoryPanel';
 import Gizmo from './components/modelview/Gizmo';
@@ -71,6 +72,7 @@ class ModelView extends React.Component {
       selectedCamera: null,
       modalOpen: false,
       vrPrompt: false,
+      scalePrompt: null,
       cameraScale: CAMERA_SCALES[props.task.srs.units] || 1.0,
       camerasVisible: false,
       pluginActionButtons: [],
@@ -239,12 +241,15 @@ class ModelView extends React.Component {
 
   setOrientation = (matrix) => {
     this.orientation.copy(matrix);
-    const rotation = new THREE.Quaternion().setFromRotationMatrix(matrix);
+    const rotation = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    matrix.decompose(new THREE.Vector3(), rotation, scale);
 
     viewer.scene.pointclouds.forEach(pc => {
-      if (!pc.userData.base) pc.userData.base = {position: pc.position.clone(), quaternion: pc.quaternion.clone()};
+      if (!pc.userData.base) pc.userData.base = {position: pc.position.clone(), quaternion: pc.quaternion.clone(), scale: pc.scale.clone()};
       pc.position.copy(pc.userData.base.position).applyMatrix4(matrix);
       pc.quaternion.copy(pc.userData.base.quaternion).premultiply(rotation);
+      pc.scale.copy(pc.userData.base.scale || new THREE.Vector3(1, 1, 1)).multiply(scale);
       pc.updateMatrixWorld(true);
     });
 
@@ -253,14 +258,61 @@ class ModelView extends React.Component {
   }
 
   applyReorientation = (rotation, center) => {
+    const at = t => {
+      const q = new THREE.Quaternion().slerp(rotation, t);
+      return new THREE.Matrix4().compose(center.clone().sub(center.clone().applyQuaternion(q)), q, new THREE.Vector3(1, 1, 1));
+    };
+    this.animateTransform(1000, at, [0, 1], at, [0, 1]);
+  }
+
+  applyScale = (factor, center) => {
+    const at = t => {
+      const f = Math.pow(factor, t);
+      return new THREE.Matrix4().compose(center.clone().multiplyScalar(1 - f), new THREE.Quaternion(), new THREE.Vector3(f, f, f));
+    };
+    this.animateTransform(1000, at, [0, 1], () => new THREE.Matrix4(), [0, 1]);
+  }
+
+  animateTransform = (duration, model, modelRange, view, viewRange) => {
+    this.finishTransform();
+    this.transformAnim = {duration, model, modelRange, view, viewRange, start: performance.now(), modelApplied: new THREE.Matrix4(), viewApplied: new THREE.Matrix4()};
+  }
+
+  finishTransform = () => {
+    if (!this.transformAnim) return;
+    this.transformAnim.start = -Infinity;
+    this.stepTransform();
+  }
+
+  stepTransform = () => {
+    const anim = this.transformAnim;
+    if (!anim) return;
+
+    const t = Math.min(1, (performance.now() - anim.start) / anim.duration);
+    const ease = range => {
+      const x = Math.min(1, Math.max(0, (t - range[0]) / (range[1] - range[0])));
+      return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(2 - 2 * x, 3) / 2;
+    };
+    const model = anim.model(ease(anim.modelRange));
+    const view = anim.view(ease(anim.viewRange));
+    this.applyTransform(model.clone().multiply(anim.modelApplied.clone().invert()), view.clone().multiply(anim.viewApplied.clone().invert()));
+    anim.modelApplied = model;
+    anim.viewApplied = view;
+    if (t >= 1) this.transformAnim = null;
+  }
+
+  applyTransform = (matrix, viewMatrix) => {
     const scene = viewer.scene;
-    const matrix = new THREE.Matrix4().compose(center.clone().sub(center.clone().applyQuaternion(rotation)), rotation, new THREE.Vector3(1, 1, 1));
+    const rotation = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    matrix.decompose(new THREE.Vector3(), rotation, scale);
 
     scene.measurements.forEach(m => m.points.forEach((p, i) => m.setPosition(i, p.position.clone().applyMatrix4(matrix))));
     scene.profiles.forEach(profile => profile.points.forEach((p, i) => profile.setPosition(i, p.clone().applyMatrix4(matrix))));
     scene.volumes.forEach(volume => {
       volume.position.applyMatrix4(matrix);
       volume.quaternion.premultiply(rotation);
+      volume.scale.multiply(scale);
     });
     scene.annotations.descendants().forEach(a => {
       a.position.applyMatrix4(matrix);
@@ -276,8 +328,8 @@ class ModelView extends React.Component {
       }
     });
 
-    const target = scene.view.getPivot().applyMatrix4(matrix);
-    scene.view.position.applyMatrix4(matrix);
+    const target = scene.view.getPivot().applyMatrix4(viewMatrix);
+    scene.view.position.applyMatrix4(viewMatrix);
     scene.view.lookAt(target);
 
     this.setOrientation(matrix.multiply(this.orientation));
@@ -458,6 +510,8 @@ class ModelView extends React.Component {
 
     this.highlight = new Highlight(viewer);
     this.reorient = new Reorient(viewer, this.applyReorientation);
+    this.setScale = new SetScale(viewer, this.handleScaleLine);
+    viewer.addEventListener("update", this.stepTransform);
     viewer.roofTool = new Roofs(viewer, this.handleInsert);
     viewer.renderer.domElement.addEventListener( 'mousedown', this.handleMouseDown );
     viewer.renderer.domElement.addEventListener( 'mousedown', this.handleMouseDownCapture, true );
@@ -484,6 +538,26 @@ class ModelView extends React.Component {
   enterVR = () => {
     this.setState({vrPrompt: false});
     this.vrButton.element.click();
+  }
+
+  handleScaleLine = (a, b) => {
+    const length = a.distanceTo(b) * viewer.lengthUnitDisplay.unitspermeter;
+    this.setState({scalePrompt: {a, b, unit: viewer.lengthUnitDisplay.code, value: parseFloat(length.toFixed(3)).toString()}});
+  }
+
+  closeScalePrompt = () => {
+    this.setScale.cancel();
+    this.setState({scalePrompt: null});
+  }
+
+  confirmScale = (e) => {
+    if (e) e.preventDefault();
+    const { a, b, value } = this.state.scalePrompt;
+    const target = parseFloat(value) / viewer.lengthUnitDisplay.unitspermeter;
+    if (!(target > 0)) return;
+
+    this.closeScalePrompt();
+    this.applyScale(target / a.distanceTo(b), a.clone().add(b).multiplyScalar(0.5));
   }
 
   getHistoryData = () => {
@@ -548,7 +622,7 @@ class ModelView extends React.Component {
     if (pos.x === 0 && pos.y === 0 && pos.z === 0) viewer.fitToScreen();
 
     if (!viewer.renderer.xr.isPresenting && performance.now() - this.lastActivity > 2000) return;
-    if (viewer.inputHandler.drag || viewer.vrControls.drag || viewer.scene.cameraAnimations.some(a => a.dragging) || this.reorient.active()) return;
+    if (viewer.inputHandler.drag || viewer.vrControls.drag || viewer.scene.cameraAnimations.some(a => a.dragging) || this.reorient.active() || this.setScale.active() || this.transformAnim) return;
     if (this.removeInvalidItems()) return;
 
     if (this.canEdit() && this.saveSceneErrors < 5){
@@ -589,7 +663,7 @@ class ModelView extends React.Component {
   }
 
   restoreHistory = (index) => {
-    if (index < 0 || index >= this.history.length || viewer.inputHandler.drag || viewer.vrControls.drag) return;
+    if (index < 0 || index >= this.history.length || viewer.inputHandler.drag || viewer.vrControls.drag || this.transformAnim) return;
 
     const scene = viewer.scene;
     const live = Potree.saveProject(viewer);
@@ -793,6 +867,8 @@ class ModelView extends React.Component {
     viewer.roofTool.dispose();
     this.highlight.dispose();
     this.reorient.dispose();
+    this.setScale.dispose();
+    viewer.removeEventListener("update", this.stepTransform);
     viewer.renderer.domElement.removeEventListener( 'mousedown', this.handleMouseDown );
     viewer.renderer.domElement.removeEventListener( 'mousedown', this.handleMouseDownCapture, true );
     viewer.renderer.domElement.removeEventListener( 'mouseup', this.handleMouseUpCapture, true );
@@ -1323,7 +1399,8 @@ class ModelView extends React.Component {
                                         onToggleCameras={this.toggleCameras}
                                         onAttributeChange={() => this.forceUpdate()}
                                         onInsert={this.handleInsert}
-                                        onReorient={this.props.task.epsg || this.props.task.wkt ? null : measure => this.reorient.start(measure)}
+                                        onReorient={this.props.task.epsg || this.props.task.wkt ? null : name => this.reorient.start(name)}
+                                        onSetScale={this.props.task.epsg || this.props.task.wkt ? null : name => this.setScale.start(name)}
                                         onEnterVR={this.state.vr ? () => this.vrButton.element.click() : null} /> : ""}
 
                     {viewer && panel === "layers" ?
@@ -1374,6 +1451,22 @@ class ModelView extends React.Component {
                             <button type="button" className="btn btn-primary btn-lg btn-block" onClick={this.enterVR}><i className="fa fa-vr-cardboard"></i> {_("Enter VR")}</button>
                             <button type="button" className="btn btn-secondary btn-lg btn-block" onClick={() => this.setState({vrPrompt: false})}><i className="fa fa-globe"></i> {_("Continue in Browser")}</button>
                         </div>
+                    </div> : ""}
+
+                    {this.state.scalePrompt ?
+                    <div className="vr-prompt" onClick={this.closeScalePrompt}>
+                        <form className="vr-prompt-box scale-prompt-box" onClick={e => e.stopPropagation()} onSubmit={this.confirmScale}
+                              onKeyDown={e => { if (e.key === "Escape"){ e.stopPropagation(); this.closeScalePrompt(); } }}>
+                            <button type="button" className="vr-prompt-close" title={_("Close")} onClick={this.closeScalePrompt}><i className="fa fa-times"></i></button>
+                            <div className="input-group">
+                                <input type="number" className="form-control" min="0" step="any" autoFocus
+                                       value={this.state.scalePrompt.value}
+                                       onFocus={e => e.target.select()}
+                                       onChange={e => this.setState({scalePrompt: Object.assign({}, this.state.scalePrompt, {value: e.target.value})})} />
+                                <span className="input-group-addon">{this.state.scalePrompt.unit}</span>
+                            </div>
+                            <button type="submit" className="btn btn-primary btn-block" disabled={!(parseFloat(this.state.scalePrompt.value) > 0)}>{_("Set Scale")}</button>
+                        </form>
                     </div> : ""}
 
                     <Standby

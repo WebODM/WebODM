@@ -198,6 +198,18 @@
         }
     }
 
+    .scale-prompt-box{
+        max-width: 360px;
+        padding: 48px 24px 24px;
+        color: #fff;
+
+        .btn{
+            padding: 8px;
+            font-size: 16px;
+            margin-top: 16px;
+        }
+    }
+
     .vr-prompt-close{
         position: absolute;
         top: 8px;

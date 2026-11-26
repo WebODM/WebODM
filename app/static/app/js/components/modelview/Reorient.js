@@ -1,10 +1,11 @@
 import * as THREE from 'THREE';
+import HelperMeasure from './HelperMeasure';
 
 class Reorient{
   constructor(viewer, onDone){
     this.viewer = viewer;
     this.onDone = onDone;
-    this.measure = null;
+    this.helper = null;
     this.group = null;
     this.arrow = null;
     this.center = null;
@@ -13,7 +14,6 @@ class Reorient{
     this.sign = 1;
     this.pressed = null;
 
-    viewer.addEventListener("update", this.update);
     document.addEventListener("keydown", this.handleKeyDown);
     viewer.renderer.domElement.addEventListener("mousemove", this.handleMouseMove);
     viewer.renderer.domElement.addEventListener("mousedown", this.handleMouseDown, true);
@@ -22,7 +22,6 @@ class Reorient{
 
   dispose(){
     this.cancel();
-    this.viewer.removeEventListener("update", this.update);
     document.removeEventListener("keydown", this.handleKeyDown);
     this.viewer.renderer.domElement.removeEventListener("mousemove", this.handleMouseMove);
     this.viewer.renderer.domElement.removeEventListener("mousedown", this.handleMouseDown, true);
@@ -30,16 +29,16 @@ class Reorient{
   }
 
   active(){
-    return !!(this.measure || this.group);
+    return !!((this.helper && !this.helper.disposed) || this.group);
   }
 
-  start(measure){
+  start(name){
     this.cancel();
-    this.measure = measure;
+    this.helper = new HelperMeasure(this.viewer, {showDistances: false, closed: true, maxMarkers: 3, name}, this.showPlane);
   }
 
   cancel = () => {
-    if (this.measure) this.viewer.scene.removeMeasurement(this.measure);
+    if (this.helper) this.helper.dispose();
     if (this.group){
       this.viewer.measuringTool.scene.remove(this.group);
       this.group.traverse(o => {
@@ -47,25 +46,15 @@ class Reorient{
         if (o.material) o.material.dispose();
       });
     }
-    this.measure = null;
+    this.helper = null;
     this.group = null;
     this.arrow = null;
     this.pressed = null;
   }
 
-  update = () => {
+  showPlane = (points) => {
     const viewer = this.viewer;
-    if (!this.measure) return;
-
-    if (viewer.scene.measurements.indexOf(this.measure) === -1){
-      this.measure = null;
-      return;
-    }
-    if (viewer.inputHandler.drag || viewer.inputHandler.paused) return;
-
-    const points = this.measure.points.map(p => p.position.clone());
     this.cancel();
-    if (points.length !== 3) return;
 
     const normal = points[1].clone().sub(points[0]).cross(points[2].clone().sub(points[0]));
     if (normal.length() < 1e-9) return;

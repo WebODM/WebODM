@@ -17,6 +17,7 @@ class Toolbar extends React.Component{
     onAttributeChange: PropTypes.func.isRequired,
     onInsert: PropTypes.func.isRequired,
     onReorient: PropTypes.func,
+    onSetScale: PropTypes.func,
     onEnterVR: PropTypes.func
   }
 
@@ -140,10 +141,10 @@ class Toolbar extends React.Component{
             onClick: () => viewer.fitToScreen() }
         ].concat(this.props.onReorient ? [
           { icon: "mv-icon mv-icon-reorient", title: _("Reorient"),
-            onClick: () => {
-              this.inserting = viewer.measuringTool.startInsertion({showDistances: false, showArea: false, closed: true, maxMarkers: 3, name: _("Reorient")});
-              this.props.onReorient(this.inserting);
-            } }
+            onClick: () => this.props.onReorient(_("Reorient")) }
+        ] : []).concat(this.props.onSetScale ? [
+          { icon: "mv-icon mv-icon-scale", title: _("Set Scale"),
+            onClick: () => this.props.onSetScale(_("Set Scale")) }
         ] : [])
       },
       {
