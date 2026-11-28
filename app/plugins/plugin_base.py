@@ -227,6 +227,14 @@ class PluginBase(ABC):
         """
         return []
 
+    def admin_menu(self):
+        """
+        Should be overriden by plugins that want to add
+        items to the Administration side menu.
+        :return: [] of Menu objects
+        """
+        return []
+
     def root_mount_points(self):
         """
         Should be overriden by plugins that want to 

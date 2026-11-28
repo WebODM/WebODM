@@ -91,6 +91,11 @@ class TestPlugins(BootTestCase):
         # And our menu entry
         self.assertContains(res, '<li><a href="/plugins/test/menu_url/"><i class="test-icon"></i> Test</a></li>', html=True)
 
+        # And our admin menu entry (staff only)
+        admin_client = Client()
+        admin_client.login(username='testsuperuser', password='test1234')
+        self.assertContains(admin_client.get('/dashboard/'), '<li><a href="/plugins/test/admin_menu_url/"><i class="test-icon"></i> Admin Test</a></li>', html=True)
+
         # A node_modules directory has been created as a result of npm install
         # because we have a package.json in the public director
         test_plugin = get_plugin_by_name("test")

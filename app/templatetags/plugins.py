@@ -23,3 +23,8 @@ def get_plugins_css_includes():
 def get_plugins_main_menus():
     # Flatten list of menus
     return list(itertools.chain(*[plugin.main_menu() for plugin in get_active_plugins()]))
+
+@register.simple_tag()
+def get_plugins_admin_menus():
+    # Flatten list of menus
+    return list(itertools.chain(*[plugin.admin_menu() for plugin in get_active_plugins()]))
