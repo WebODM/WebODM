@@ -399,6 +399,7 @@ class PluginAdmin(admin.ModelAdmin):
         return format_html(
             '<a class="button" href="{}" {}>{}</a>&nbsp;'
             '<a class="button" href="{}" {}>{}</a>'
+            + ('&nbsp;<a class="button" href="{settings}"><i class="fa fa-cog"></i></a>' if obj.enabled and plugin.settings_button_url() is not None else '')
             + (
                 '&nbsp;<a class="button" href="{}" onclick="return confirm({})"><i class="fa fa-trash"></i></a>' if not plugin.is_persistent() else '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;')
             ,
@@ -409,7 +410,8 @@ class PluginAdmin(admin.ModelAdmin):
             'disabled' if obj.enabled else '',
             _('Enable'),
             reverse('admin:plugin-delete', args=[obj.pk]),
-            json.dumps(_("Are you sure you want to delete %(plugin)s?") % {'plugin': obj.name})
+            json.dumps(_("Are you sure you want to delete %(plugin)s?") % {'plugin': obj.name}),
+            settings=plugin.settings_button_url()
         )
 
     plugin_actions.short_description = _('Actions')

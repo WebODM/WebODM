@@ -91,7 +91,7 @@ class TestPlugins(BootTestCase):
         # And our menu entry
         self.assertContains(res, '<li><a href="/plugins/test/menu_url/"><i class="test-icon"></i> Test</a></li>', html=True)
 
-        # And our admin menu entry (staff only)
+        # And our admin menu entry
         admin_client = Client()
         admin_client.login(username='testsuperuser', password='test1234')
         self.assertContains(admin_client.get('/dashboard/'), '<li><a href="/plugins/test/admin_menu_url/"><i class="test-icon"></i> Admin Test</a></li>', html=True)
@@ -258,6 +258,7 @@ class TestPlugins(BootTestCase):
         res = c.get('/admin/app/plugin/')
         self.assertContains(res, '<a class="button" href="#" disabled>Enable</a>')
         self.assertContains(res, "<script src='/plugins/test/test.js?v=0.1.0'></script>")
+        self.assertContains(res, '<a class="button" href="/plugins/test/settings/"><i class="fa fa-cog"></i></a>')
 
         self.assertContains(res, 'data-can-build="true"')
         self.assertContains(res, 'data-webodm-version="{}"'.format(settings.VERSION))

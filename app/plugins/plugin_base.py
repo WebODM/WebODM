@@ -234,6 +234,14 @@ class PluginBase(ABC):
         :return: [] of Menu objects
         """
         return []
+    
+    def settings_button_url(self):
+        """
+        Should be overriden by plugins that want to show
+        a settings button in the Plugins administration list
+        :return: str URL to the plugin's settings view
+        """
+        return None
 
     def root_mount_points(self):
         """

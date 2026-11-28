@@ -24,6 +24,9 @@ class Plugin(PluginBase):
     def admin_menu(self):
         return [Menu("Admin Test", self.public_url("admin_menu_url/"), "test-icon")]
 
+    def settings_button_url(self):
+        return self.public_url("settings/")
+
     def include_js_files(self):
         return ['test.js']
 
