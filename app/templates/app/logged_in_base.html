@@ -144,9 +144,11 @@
 
                         {% get_plugins_admin_menus as plugin_admin_menus %}
                         {% for menu in plugin_admin_menus %}
+                            {% if not menu.admin_only or user.is_superuser %}
                             <li>
                                 <a href="{{menu.link}}"><i class="{{menu.css_icon}}"></i> {{menu.label}}</a>
                             </li>
+                            {% endif %}
                         {% endfor %}
                     </ul>
                 </li>
